@@ -16,18 +16,21 @@ import { demoWorkbook } from './demo'
 import { parseExcelFile } from './excel'
 import pb from './pocketbase/client'
 
-const LS_KEY = 'harmoza-state-v1'
+const LS_KEY = 'harmoza-state-v2'
+const V1_KEY = 'harmoza-state-v1'
 
 interface PersistedState {
-  workbook: Workbook | null
+  workbooks: Workbook[]
+  activeWorkbookId: string | null
   view: ViewMode
   components: DashComponent[]
   layout: DashLayoutItem[]
-  fileName: string
 }
 
 interface HarmozaCtx {
   workbook: Workbook | null
+  workbooks: Workbook[]
+  activeWorkbookId: string | null
   fileName: string
   importState: ImportState
   importError: string
@@ -44,6 +47,7 @@ interface HarmozaCtx {
   addColumn: (name: string) => void
   importFile: (file: File) => Promise<void>
   loadDemo: () => Promise<void>
+  switchWorkbook: (id: string) => void
   reset: () => void
   components: DashComponent[]
   layout: DashLayoutItem[]
@@ -68,10 +72,29 @@ const Ctx = createContext<HarmozaCtx | null>(null)
 function loadPersisted(): PersistedState | null {
   try {
     const raw = localStorage.getItem(LS_KEY)
-    if (!raw) return null
-    const p = JSON.parse(raw) as PersistedState
-    if (!p.workbook || !Array.isArray(p.workbook.sheets)) return null
-    return p
+    if (raw) {
+      const p = JSON.parse(raw) as PersistedState
+      if (p.workbooks && Array.isArray(p.workbooks)) return p
+    }
+    const v1raw = localStorage.getItem(V1_KEY)
+    if (v1raw) {
+      const v1 = JSON.parse(v1raw) as {
+        workbook?: Workbook | null
+        view?: ViewMode
+        components?: DashComponent[]
+        layout?: DashLayoutItem[]
+      }
+      if (v1.workbook) {
+        return {
+          workbooks: [v1.workbook],
+          activeWorkbookId: v1.workbook.id,
+          view: v1.view ?? 'sheet',
+          components: v1.components ?? [],
+          layout: v1.layout ?? [],
+        }
+      }
+    }
+    return null
   } catch {
     return null
   }
@@ -81,10 +104,12 @@ const uid = () => Math.random().toString(36).slice(2, 10)
 
 export function HarmozaProvider({ children }: { children: ReactNode }) {
   const [persisted] = useState(loadPersisted)
-  const [workbook, setWorkbook] = useState<Workbook | null>(persisted?.workbook ?? null)
-  const [fileName, setFileName] = useState(persisted?.fileName ?? '')
+  const [workbooks, setWorkbooks] = useState<Workbook[]>(persisted?.workbooks ?? [])
+  const [activeWorkbookId, setActiveWorkbookId] = useState<string | null>(
+    persisted?.activeWorkbookId ?? null,
+  )
   const [importState, setImportState] = useState<ImportState>(
-    persisted?.workbook ? 'success' : 'idle',
+    persisted?.workbooks?.length ? 'success' : 'idle',
   )
   const [importError, setImportError] = useState('')
   const [warnings, setWarnings] = useState<string[]>([])
@@ -97,13 +122,21 @@ export function HarmozaProvider({ children }: { children: ReactNode }) {
   const [agentMessages, setAgentMessages] = useState<AgentMessage[]>([])
   const [agentStatus, setAgentStatus] = useState<AgentStatus>('idle')
 
+  const workbook = useMemo(
+    () => workbooks.find((w) => w.id === activeWorkbookId) ?? null,
+    [workbooks, activeWorkbookId],
+  )
+  const fileName = useMemo(() => workbook?.fileName ?? '', [workbook])
+
   const lastWorkbookRef = useRef<Workbook | null>(workbook)
   lastWorkbookRef.current = workbook
 
   useEffect(() => {
-    if (!workbook) return
-    localStorage.setItem(LS_KEY, JSON.stringify({ workbook, view, components, layout, fileName }))
-  }, [workbook, view, components, layout, fileName])
+    localStorage.setItem(
+      LS_KEY,
+      JSON.stringify({ workbooks, activeWorkbookId, view, components, layout }),
+    )
+  }, [workbooks, activeWorkbookId, view, components, layout])
 
   const activeSheet = useMemo(() => {
     if (!workbook) return null
@@ -118,15 +151,15 @@ export function HarmozaProvider({ children }: { children: ReactNode }) {
     setWarnings([])
     try {
       const res = await parseExcelFile(file)
-      setWorkbook(res.workbook)
-      setFileName(res.workbook.fileName)
+      const wb = res.workbook
+      setWorkbooks((prev) => [...prev, wb])
+      setActiveWorkbookId(wb.id)
       setWarnings(res.warnings || [])
       setImportState('success')
       setView('sheet')
 
-      if (res.workbook.sheets && res.workbook.sheets.length > 0) {
-        const activeS = res.workbook.sheets[0]
-        const gen = generateDashboard(activeS)
+      if (wb.sheets && wb.sheets.length > 0) {
+        const gen = generateDashboard(wb.sheets[0])
         setComponents(gen.components)
         setLayout(gen.layout)
         setDashReady(true)
@@ -136,31 +169,33 @@ export function HarmozaProvider({ children }: { children: ReactNode }) {
         try {
           await pb.collection('workbooks').create({
             owner: pb.authStore.record.id,
-            name: res.workbook.fileName.replace(/\.xlsx?$/i, ''),
-            fileName: res.workbook.fileName,
-            rawJson: res.workbook,
+            name: wb.fileName.replace(/\.xlsx?$/i, ''),
+            fileName: wb.fileName,
+            rawJson: wb,
           })
         } catch (e) {
           console.warn('Could not persist workbook in backend:', e)
         }
       }
 
-      toast.success(`Planilha "${res.workbook.fileName}" importada!`, {
-        description: `${res.workbook.sheets.length} aba(s) identificada(s). Redirecionando para visualização.`,
+      toast.success(`Planilha "${wb.fileName}" importada!`, {
+        description: `${wb.sheets.length} aba(s) identificada(s). Redirecionando para visualização.`,
       })
     } catch (err) {
       setImportState('error')
       const msg = err instanceof Error ? err.message : 'Não foi possível processar o arquivo.'
       setImportError(msg)
       toast.error('Erro na importação', { description: msg })
-      setWorkbook(null)
     }
   }, [])
 
   const loadDemo = useCallback(async () => {
     const wb = demoWorkbook()
-    setWorkbook(wb)
-    setFileName(wb.fileName)
+    setWorkbooks((prev) => {
+      const exists = prev.find((w) => w.id === wb.id)
+      return exists ? prev : [...prev, wb]
+    })
+    setActiveWorkbookId(wb.id)
     setImportState('success')
     setImportError('')
     setWarnings([])
@@ -178,10 +213,29 @@ export function HarmozaProvider({ children }: { children: ReactNode }) {
     })
   }, [])
 
+  const switchWorkbook = useCallback(
+    (id: string) => {
+      const target = workbooks.find((w) => w.id === id)
+      if (!target) return
+      setActiveWorkbookId(id)
+      setImportState('success')
+      setView('sheet')
+      const sheet = target.sheets.find((s) => s.id === target.activeSheetId) ?? target.sheets[0]
+      if (sheet) {
+        const gen = generateDashboard(sheet)
+        setComponents(gen.components)
+        setLayout(gen.layout)
+        setDashReady(true)
+      }
+    },
+    [workbooks],
+  )
+
   const reset = useCallback(() => {
     localStorage.removeItem(LS_KEY)
-    setWorkbook(null)
-    setFileName('')
+    localStorage.removeItem(V1_KEY)
+    setWorkbooks([])
+    setActiveWorkbookId(null)
     setImportState('idle')
     setImportError('')
     setWarnings([])
@@ -193,84 +247,125 @@ export function HarmozaProvider({ children }: { children: ReactNode }) {
     setAgentOpen(false)
   }, [])
 
-  const setActiveSheet = useCallback((id: string) => {
-    setWorkbook((w) => {
-      if (!w || !w.sheets.some((s) => s.id === id)) return w
-      const targetSheet = w.sheets.find((s) => s.id === id)
-      if (targetSheet) {
-        const gen = generateDashboard(targetSheet)
-        setComponents(gen.components)
-        setLayout(gen.layout)
-        setDashReady(true)
-      }
-      return { ...w, activeSheetId: id }
-    })
-  }, [])
+  const setActiveSheet = useCallback(
+    (id: string) => {
+      setWorkbooks((prev) =>
+        prev.map((w) => {
+          if (w.id !== activeWorkbookId || !w.sheets.some((s) => s.id === id)) return w
+          const targetSheet = w.sheets.find((s) => s.id === id)
+          if (targetSheet) {
+            const gen = generateDashboard(targetSheet)
+            setComponents(gen.components)
+            setLayout(gen.layout)
+            setDashReady(true)
+          }
+          return { ...w, activeSheetId: id }
+        }),
+      )
+    },
+    [activeWorkbookId],
+  )
 
-  const createSheet = useCallback((name: string, fromSheetId?: string) => {
-    setWorkbook((w) => {
-      if (!w) return w
-      const base = fromSheetId ? w.sheets.find((s) => s.id === fromSheetId) : null
-      const ns: SheetData = base
-        ? { ...base, id: 'sheet-' + uid(), name, rows: base.rows.map((r) => [...r]) }
-        : { id: 'sheet-' + uid(), name, columns: [{ name: 'Coluna A', type: 'text' }], rows: [] }
-      return { ...w, sheets: [...w.sheets, ns], activeSheetId: ns.id }
-    })
-  }, [])
+  const createSheet = useCallback(
+    (name: string, fromSheetId?: string) => {
+      setWorkbooks((prev) =>
+        prev.map((w) => {
+          if (w.id !== activeWorkbookId) return w
+          const base = fromSheetId ? w.sheets.find((s) => s.id === fromSheetId) : null
+          const ns: SheetData = base
+            ? { ...base, id: 'sheet-' + uid(), name, rows: base.rows.map((r) => [...r]) }
+            : {
+                id: 'sheet-' + uid(),
+                name,
+                columns: [{ name: 'Coluna A', type: 'text' }],
+                rows: [],
+              }
+          return { ...w, sheets: [...w.sheets, ns], activeSheetId: ns.id }
+        }),
+      )
+    },
+    [activeWorkbookId],
+  )
 
-  const renameSheet = useCallback((id: string, name: string) => {
-    setWorkbook((w) =>
-      w ? { ...w, sheets: w.sheets.map((s) => (s.id === id ? { ...s, name } : s)) } : w,
-    )
-  }, [])
+  const renameSheet = useCallback(
+    (id: string, name: string) => {
+      setWorkbooks((prev) =>
+        prev.map((w) =>
+          w.id === activeWorkbookId
+            ? { ...w, sheets: w.sheets.map((s) => (s.id === id ? { ...s, name } : s)) }
+            : w,
+        ),
+      )
+    },
+    [activeWorkbookId],
+  )
 
-  const deleteSheet = useCallback((id: string) => {
-    setWorkbook((w) => {
-      if (!w || w.sheets.length <= 1) return w
-      const sheets = w.sheets.filter((s) => s.id !== id)
-      return {
-        ...w,
-        sheets,
-        activeSheetId: w.activeSheetId === id ? sheets[0].id : w.activeSheetId,
-      }
-    })
-  }, [])
+  const deleteSheet = useCallback(
+    (id: string) => {
+      setWorkbooks((prev) =>
+        prev.map((w) => {
+          if (w.id !== activeWorkbookId || w.sheets.length <= 1) return w
+          const sheets = w.sheets.filter((s) => s.id !== id)
+          return {
+            ...w,
+            sheets,
+            activeSheetId: w.activeSheetId === id ? sheets[0].id : w.activeSheetId,
+          }
+        }),
+      )
+    },
+    [activeWorkbookId],
+  )
 
-  const updateSheet = useCallback((sheet: SheetData) => {
-    setWorkbook((w) =>
-      w ? { ...w, sheets: w.sheets.map((s) => (s.id === sheet.id ? sheet : s)) } : w,
-    )
-  }, [])
+  const updateSheet = useCallback(
+    (sheet: SheetData) => {
+      setWorkbooks((prev) =>
+        prev.map((w) =>
+          w.id === activeWorkbookId
+            ? { ...w, sheets: w.sheets.map((s) => (s.id === sheet.id ? sheet : s)) }
+            : w,
+        ),
+      )
+    },
+    [activeWorkbookId],
+  )
 
   const addRow = useCallback(() => {
-    setWorkbook((w) => {
-      if (!w || !w.activeSheetId) return w
-      return {
-        ...w,
-        sheets: w.sheets.map((s) =>
-          s.id === w.activeSheetId ? { ...s, rows: [...s.rows, s.columns.map(() => null)] } : s,
-        ),
-      }
-    })
-  }, [])
+    setWorkbooks((prev) =>
+      prev.map((w) => {
+        if (w.id !== activeWorkbookId || !w.activeSheetId) return w
+        return {
+          ...w,
+          sheets: w.sheets.map((s) =>
+            s.id === w.activeSheetId ? { ...s, rows: [...s.rows, s.columns.map(() => null)] } : s,
+          ),
+        }
+      }),
+    )
+  }, [activeWorkbookId])
 
-  const addColumn = useCallback((name: string) => {
-    setWorkbook((w) => {
-      if (!w || !w.activeSheetId) return w
-      return {
-        ...w,
-        sheets: w.sheets.map((s) =>
-          s.id === w.activeSheetId
-            ? {
-                ...s,
-                columns: [...s.columns, { name, type: 'text' }],
-                rows: s.rows.map((r) => [...r, null]),
-              }
-            : s,
-        ),
-      }
-    })
-  }, [])
+  const addColumn = useCallback(
+    (name: string) => {
+      setWorkbooks((prev) =>
+        prev.map((w) => {
+          if (w.id !== activeWorkbookId || !w.activeSheetId) return w
+          return {
+            ...w,
+            sheets: w.sheets.map((s) =>
+              s.id === w.activeSheetId
+                ? {
+                    ...s,
+                    columns: [...s.columns, { name, type: 'text' }],
+                    rows: s.rows.map((r) => [...r, null]),
+                  }
+                : s,
+            ),
+          }
+        }),
+      )
+    },
+    [activeWorkbookId],
+  )
 
   const runAutoDashboard = useCallback(() => {
     if (!activeSheet) return
@@ -429,6 +524,8 @@ export function HarmozaProvider({ children }: { children: ReactNode }) {
 
   const value: HarmozaCtx = {
     workbook,
+    workbooks,
+    activeWorkbookId,
     fileName,
     importState,
     importError,
@@ -445,6 +542,7 @@ export function HarmozaProvider({ children }: { children: ReactNode }) {
     addColumn,
     importFile,
     loadDemo,
+    switchWorkbook,
     reset,
     components,
     layout,

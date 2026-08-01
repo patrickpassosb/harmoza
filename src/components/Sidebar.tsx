@@ -1,14 +1,21 @@
-// HARMOZA — barra lateral (logo, importar, navegação, sair)
 import { useRef } from 'react'
 import { Upload, Table2, LayoutDashboard, Bot, FileSpreadsheet, Plus } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { HarmozaLogo, HarmozaWordmark } from './Logo'
 import { useHarmoza } from '@/lib/store'
 import { useNavigate } from 'react-router-dom'
-import pb from '@/lib/pocketbase/client'
 
 export function Sidebar() {
-  const { view, setView, importState, importFile, loadDemo, fileName, setAgentOpen } = useHarmoza()
+  const {
+    view,
+    setView,
+    importFile,
+    loadDemo,
+    workbooks,
+    activeWorkbookId,
+    switchWorkbook,
+    setAgentOpen,
+  } = useHarmoza()
   const inputRef = useRef<HTMLInputElement>(null)
   const navigate = useNavigate()
 
@@ -76,26 +83,48 @@ export function Sidebar() {
         </button>
       </nav>
 
-      {importState === 'success' && fileName && (
-        <div className="mt-6 px-3">
-          <p className="px-3 pb-2 text-[11px] font-semibold uppercase tracking-wider text-white/50">
-            Arquivo atual
-          </p>
-          <div className="flex items-center gap-2 rounded-lg bg-white/10 px-3 py-2.5">
-            <FileSpreadsheet className="h-4 w-4 shrink-0 text-emerald-300" />
-            <span className="truncate text-xs text-white/90">{fileName}</span>
-          </div>
-          <button
-            className="mt-2 flex w-full items-center gap-2 rounded-lg px-3 py-2 text-xs text-white/60 transition-colors hover:text-white"
-            onClick={() => {
-              void loadDemo()
-              navigate('/')
-            }}
-          >
-            <Plus className="h-3.5 w-3.5" /> Carregar demonstração
-          </button>
+      <div className="mt-6 flex-1 overflow-y-auto px-3 pb-3">
+        <p className="px-3 pb-2 text-[11px] font-semibold uppercase tracking-wider text-white/50">
+          Meus arquivos
+        </p>
+        <div className="flex flex-col gap-1">
+          {workbooks.length === 0 && (
+            <p className="px-3 py-2 text-xs text-white/40">Nenhum arquivo carregado</p>
+          )}
+          {workbooks.map((wb) => {
+            const isActive = wb.id === activeWorkbookId
+            const isDemo = wb.id === 'demo-workbook'
+            return (
+              <button
+                key={wb.id}
+                onClick={() => {
+                  switchWorkbook(wb.id)
+                  navigate('/')
+                }}
+                className={`flex items-center gap-2 rounded-lg px-3 py-2.5 text-left transition-colors ${
+                  isActive
+                    ? 'bg-white/15 text-white'
+                    : 'text-white/70 hover:bg-white/10 hover:text-white'
+                }`}
+              >
+                <FileSpreadsheet
+                  className={`h-4 w-4 shrink-0 ${isActive ? 'text-emerald-300' : 'text-white/50'}`}
+                />
+                <span className="truncate text-xs">{isDemo ? 'Demonstração' : wb.fileName}</span>
+              </button>
+            )
+          })}
         </div>
-      )}
+        <button
+          className="mt-2 flex w-full items-center gap-2 rounded-lg px-3 py-2 text-xs text-white/60 transition-colors hover:text-white"
+          onClick={() => {
+            void loadDemo()
+            navigate('/')
+          }}
+        >
+          <Plus className="h-3.5 w-3.5" /> Carregar demonstração
+        </button>
+      </div>
     </aside>
   )
 }

@@ -39,14 +39,17 @@ function formatValue(w: Widget, n: number | null | undefined): string {
 function KpiCard({ widget }: { widget: Widget }) {
   const d = widget.data
   const val = d?.kpiValue ?? null
+  const formattedVal = formatValue(widget, val)
   return (
-    <div className="flex h-full flex-col justify-center p-4">
-      <div className="text-sm font-medium text-muted-foreground">{widget.title}</div>
-      <div className="mt-1 text-2xl font-bold tracking-tight text-foreground">
-        {formatValue(widget, val)}
+    <div className="flex h-full flex-col justify-center p-3 sm:p-4">
+      <div
+        className="text-2xl font-bold tracking-tight text-[#172554] sm:text-3xl truncate"
+        title={formattedVal}
+      >
+        {formattedVal}
       </div>
       {d?.kpiDelta !== undefined && d?.kpiDelta !== null && (
-        <div className="mt-1 flex items-center gap-1 text-xs">
+        <div className="mt-1 flex items-center gap-1 text-xs font-medium">
           <span className={d.kpiDelta >= 0 ? 'text-emerald-600' : 'text-red-600'}>
             {d.kpiDelta >= 0 ? '▲' : '▼'} {Math.abs(d.kpiDelta).toLocaleString('pt-BR')}%
           </span>

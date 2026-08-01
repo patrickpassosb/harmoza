@@ -232,7 +232,7 @@ export function generateDashboard(sheet: SheetData): GeneratedDashboard {
     }
   }
 
-  // Bar: Status
+  // Bar: Status (Status das Operações — ocupando toda a largura)
   if (statusIdx >= 0) {
     const map = new Map<string, number>()
     for (const r of rows) {
@@ -249,7 +249,8 @@ export function generateDashboard(sheet: SheetData): GeneratedDashboard {
         data,
         config: { currency: false },
       })
-      layout.push({ i: id, x: 0, y: nextY, w: 6, h: 4 })
+      layout.push({ i: id, x: 0, y: nextY, w: 12, h: 4 })
+      nextY += 4
     }
   }
 

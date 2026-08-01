@@ -3,12 +3,16 @@ export function fmtCurrency(v: number | null | undefined): string {
   return v.toLocaleString('pt-BR', {
     style: 'currency',
     currency: 'BRL',
-    maximumFractionDigits: v >= 10000 ? 0 : 2,
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
   })
 }
 export function fmtNumber(v: number | null | undefined): string {
   if (v === null || v === undefined || Number.isNaN(v)) return '—'
-  return v.toLocaleString('pt-BR', { maximumFractionDigits: 0 })
+  return v.toLocaleString('pt-BR', {
+    minimumFractionDigits: 0,
+    maximumFractionDigits: 2,
+  })
 }
 export function fmtCell(v: unknown, type?: string): string {
   if (v === null || v === undefined) return ''

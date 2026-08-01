@@ -48,9 +48,13 @@ function fmtVal(v: number, currency?: boolean): string {
     return v.toLocaleString('pt-BR', {
       style: 'currency',
       currency: 'BRL',
-      maximumFractionDigits: 0,
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
     })
-  return v.toLocaleString('pt-BR', { maximumFractionDigits: 1 })
+  return v.toLocaleString('pt-BR', {
+    minimumFractionDigits: 0,
+    maximumFractionDigits: 2,
+  })
 }
 
 export interface DashCardProps {
@@ -115,27 +119,53 @@ export function DashCardBody({ comp }: { comp: DashComponent }) {
   const currency = (comp.config?.currency as boolean) ?? false
   switch (comp.kind) {
     case 'kpi': {
-      const value = (comp.config?.value as string) ?? '—'
+      const rawVal = comp.config?.value ?? data[0]?.value
+      let formattedVal = '—'
+      if (typeof rawVal === 'number') {
+        formattedVal = fmtVal(rawVal, currency)
+      } else if (typeof rawVal === 'string') {
+        const num = parseFloat(rawVal.replace(/[R$\s.]/g, '').replace(',', '.'))
+        if (!isNaN(num)) {
+          formattedVal = fmtVal(num, currency)
+        } else {
+          formattedVal = rawVal
+        }
+      }
+
       const trend = comp.config?.trend as string | undefined
       return (
-        <div className="flex h-full flex-col justify-between p-4">
-          <div>
-            <p className="text-sm font-medium text-muted-foreground">{comp.title}</p>
-            <p className="mt-2 text-3xl font-bold tracking-tight text-foreground">{value}</p>
+        <div className="flex h-full flex-col justify-center p-3 sm:p-4">
+          <div className="min-w-0">
+            <p
+              className="text-2xl font-bold tracking-tight text-[#172554] sm:text-3xl truncate"
+              title={formattedVal}
+            >
+              {formattedVal}
+            </p>
+            {comp.subtitle && (
+              <p className="mt-1 text-xs font-medium text-muted-foreground truncate">
+                {comp.subtitle}
+              </p>
+            )}
           </div>
           {trend && (
             <div className="mt-2 flex items-center gap-1 text-xs">
               {trend.startsWith('-') ? (
-                <TrendingDown className="h-3.5 w-3.5 text-red-500" />
+                <TrendingDown className="h-3.5 w-3.5 shrink-0 text-red-500" />
               ) : (
-                <TrendingUp className="h-3.5 w-3.5 text-emerald-500" />
+                <TrendingUp className="h-3.5 w-3.5 shrink-0 text-emerald-500" />
               )}
-              <span className={trend.startsWith('-') ? 'text-red-600' : 'text-emerald-600'}>
+              <span
+                className={
+                  trend.startsWith('-')
+                    ? 'font-medium text-red-600'
+                    : 'font-medium text-emerald-600'
+                }
+              >
                 {trend}
               </span>
             </div>
           )}
-          {comp.subtitle && <p className="mt-1 text-xs text-muted-foreground">{comp.subtitle}</p>}
         </div>
       )
     }

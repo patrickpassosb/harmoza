@@ -1,82 +1,51 @@
-// HARMOZA — tipos centrais da aplicação (compatível com AppShell/analyze/excel)
-
-export type CellValue = string | number | null
 export type ColumnType = 'text' | 'number' | 'currency' | 'percent' | 'date'
-
 export interface ColumnMeta {
   name: string
   type: ColumnType
 }
-
-export interface Sheet {
+export type CellValue = string | number | null
+export interface SheetData {
   id: string
   name: string
-  columns: string[] // nomes das colunas
+  columns: ColumnMeta[]
   rows: CellValue[][]
-  columnTypes?: Record<string, string> // nome da coluna -> tipo detectado
 }
-
-export type DashKind = 'kpi' | 'bar' | 'line' | 'area' | 'pie' | 'ranking' | 'table'
-
+export interface Workbook {
+  id: string
+  fileName: string
+  sheets: SheetData[]
+  activeSheetId: string
+}
+export type DashKind = 'kpi' | 'bar' | 'line' | 'pie' | 'table' | 'ranking'
 export interface DashComponent {
   id: string
-  type: DashKind
+  kind: DashKind
   title: string
-  columnX?: string
-  columnY?: string
-  aggregation?: 'sum' | 'avg' | 'count'
-  format?: 'currency' | 'number' | 'percent'
-  labels?: string[]
-  values?: number[]
-  rows?: { label: string; value: number }[]
-  config?: Record<string, unknown>
+  subtitle?: string
+  data?: { label: string; value: number }[]
+  config: Record<string, unknown>
 }
-
-export interface DashboardLayoutItem {
+export interface DashLayoutItem {
   i: string
   x: number
   y: number
   w: number
   h: number
 }
-
-export interface Analysis {
-  totalRevenue?: number
-  totalProfit?: number
-  avgTicket?: number
-  orderCount?: number
-  monthlyRevenue?: { label: string; value: number }[]
-  categoryRevenue?: { label: string; value: number }[]
-  topProducts?: { label: string; value: number }[]
-  topClients?: { label: string; value: number }[]
-  regionRevenue?: { label: string; value: number }[]
-  statusCounts?: { label: string; value: number }[]
-  hasRevenue: boolean
-  hasProfit: boolean
-  hasDate: boolean
-}
-
-export interface WorkBookState {
-  fileName: string
-  sheets: Sheet[]
-  activeSheetId: string
-  dashboard: DashComponent[]
-  layout: DashboardLayoutItem[]
-  analysis?: Analysis
-}
-
-export interface AgentResult {
-  reply: string
-  action: string | null
-  params: Record<string, unknown>
-}
-
-export interface ChatMessage {
+export type ViewMode = 'sheet' | 'dashboard'
+export type ImportState = 'idle' | 'loading' | 'success' | 'error'
+export interface AgentMessage {
   id: string
   role: 'user' | 'assistant'
   content: string
   action?: string
-  createdAt: number
+  created: number
 }
-
-export type ViewMode = 'sheet' | 'dashboard'
+export type AgentStatus =
+  | 'idle'
+  | 'listening'
+  | 'processing'
+  | 'executing'
+  | 'done'
+  | 'unclear'
+  | 'error'

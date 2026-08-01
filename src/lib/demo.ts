@@ -1,4 +1,5 @@
 import type { Workbook, SheetData } from './types'
+
 const P: [string, string, number, number][] = [
   ['Café Torrado 500g', 'Mercearia', 18.9, 12.5],
   ['Arroz 5kg', 'Mercearia', 24.9, 18.2],
@@ -37,6 +38,7 @@ const V = [
 ]
 const R = ['Sul', 'Sudeste', 'Centro-Oeste', 'Nordeste', 'Norte']
 const ST = ['Entregue', 'Em trânsito', 'Pendente', 'Entregue', 'Entregue', 'Cancelado']
+
 function buildDemoSheet(): SheetData {
   const columns = [
     { name: 'Data', type: 'date' as const },
@@ -89,6 +91,7 @@ function buildDemoSheet(): SheetData {
   }
   return { id: 'demo-vendas', name: 'Vendas 2025', columns, rows }
 }
+
 export function demoWorkbook(): Workbook {
   return {
     id: 'demo-workbook',

@@ -84,6 +84,17 @@ export interface ParseResult {
   workbook: Workbook
   warnings: string[]
 }
+export type ParsedWorkbook = {
+  fileName: string
+  sheets: SheetData[]
+}
+export async function parseWorkbook(file: File): Promise<ParsedWorkbook> {
+  const result = await parseExcelFile(file)
+  return {
+    fileName: result.workbook.fileName,
+    sheets: result.workbook.sheets,
+  }
+}
 export async function parseExcelFile(file: File): Promise<ParseResult> {
   const buf = await file.arrayBuffer()
   const wb = XLSX.read(buf, { type: 'array', cellDates: true })

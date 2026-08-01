@@ -1,4 +1,3 @@
-// HARMOZA — grade modular arrastável do dashboard (react-grid-layout)
 import { useState } from 'react'
 import GridLayout, { WidthProvider, type Layout } from 'react-grid-layout'
 import 'react-grid-layout/css/styles.css'

@@ -1,6 +1,4 @@
-// HARMOZA — logo e wordmark
 import { cn } from '@/lib/utils'
-
 export function HarmozaLogo({
   size = 32,
   light = false,
@@ -34,12 +32,6 @@ export function HarmozaLogo({
     </div>
   )
 }
-
-// Alias para compatibilidade — Logo = HarmozaLogo (com nome)
-export function Logo({ size = 32, className }: { size?: number; className?: string }) {
-  return <HarmozaLogo size={size} showName className={className} />
-}
-
 export function HarmozaWordmark({
   dark = false,
   size = 'md',

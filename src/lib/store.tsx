@@ -1,4 +1,3 @@
-// HARMOZA — estado global (context + localStorage)
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
 import type {
@@ -40,7 +39,6 @@ interface HarmozaCtx {
   renameSheet: (id: string, name: string) => void
   deleteSheet: (id: string) => void
   updateSheet: (sheet: SheetData) => void
-  setCell: (sheetId: string, rowIdx: number, colIdx: number, value: string | number | null) => void
   addRow: () => void
   addColumn: (name: string) => void
   importFile: (file: File) => Promise<void>
@@ -103,8 +101,7 @@ export function HarmozaProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     if (!workbook) return
-    const state: PersistedState = { workbook, view, components, layout, fileName }
-    localStorage.setItem(LS_KEY, JSON.stringify(state))
+    localStorage.setItem(LS_KEY, JSON.stringify({ workbook, view, components, layout, fileName }))
   }, [workbook, view, components, layout, fileName])
 
   const activeSheet = useMemo(() => {
@@ -165,8 +162,7 @@ export function HarmozaProvider({ children }: { children: ReactNode }) {
 
   const setActiveSheet = useCallback((id: string) => {
     setWorkbook((w) => {
-      if (!w) return w
-      if (!w.sheets.some((s) => s.id === id)) return w
+      if (!w || !w.sheets.some((s) => s.id === id)) return w
       return { ...w, activeSheetId: id }
     })
   }, [])
@@ -175,65 +171,45 @@ export function HarmozaProvider({ children }: { children: ReactNode }) {
     setWorkbook((w) => {
       if (!w) return w
       const base = fromSheetId ? w.sheets.find((s) => s.id === fromSheetId) : null
-      const newSheet: SheetData = base
-        ? { ...base, id: `sheet-${uid()}`, name, rows: base.rows.map((r) => [...r]) }
-        : { id: `sheet-${uid()}`, name, columns: [{ name: 'Coluna A', type: 'text' }], rows: [] }
-      return { ...w, sheets: [...w.sheets, newSheet], activeSheetId: newSheet.id }
+      const ns: SheetData = base
+        ? { ...base, id: 'sheet-' + uid(), name, rows: base.rows.map((r) => [...r]) }
+        : { id: 'sheet-' + uid(), name, columns: [{ name: 'Coluna A', type: 'text' }], rows: [] }
+      return { ...w, sheets: [...w.sheets, ns], activeSheetId: ns.id }
     })
   }, [])
 
   const renameSheet = useCallback((id: string, name: string) => {
-    setWorkbook((w) => {
-      if (!w) return w
-      return { ...w, sheets: w.sheets.map((s) => (s.id === id ? { ...s, name } : s)) }
-    })
+    setWorkbook((w) =>
+      w ? { ...w, sheets: w.sheets.map((s) => (s.id === id ? { ...s, name } : s)) } : w,
+    )
   }, [])
 
   const deleteSheet = useCallback((id: string) => {
     setWorkbook((w) => {
-      if (!w) return w
-      if (w.sheets.length <= 1) return w
+      if (!w || w.sheets.length <= 1) return w
       const sheets = w.sheets.filter((s) => s.id !== id)
-      const activeSheetId = w.activeSheetId === id ? sheets[0].id : w.activeSheetId
-      return { ...w, sheets, activeSheetId }
+      return {
+        ...w,
+        sheets,
+        activeSheetId: w.activeSheetId === id ? sheets[0].id : w.activeSheetId,
+      }
     })
   }, [])
 
   const updateSheet = useCallback((sheet: SheetData) => {
-    setWorkbook((w) => {
-      if (!w) return w
-      return { ...w, sheets: w.sheets.map((s) => (s.id === sheet.id ? sheet : s)) }
-    })
+    setWorkbook((w) =>
+      w ? { ...w, sheets: w.sheets.map((s) => (s.id === sheet.id ? sheet : s)) } : w,
+    )
   }, [])
-
-  const setCell = useCallback(
-    (sheetId: string, rowIdx: number, colIdx: number, value: string | number | null) => {
-      setWorkbook((w) => {
-        if (!w) return w
-        return {
-          ...w,
-          sheets: w.sheets.map((s) => {
-            if (s.id !== sheetId) return s
-            const rows = s.rows.map((r, ri) =>
-              ri === rowIdx ? r.map((c, ci) => (ci === colIdx ? value : c)) : r,
-            )
-            return { ...s, rows }
-          }),
-        }
-      })
-    },
-    [],
-  )
 
   const addRow = useCallback(() => {
     setWorkbook((w) => {
       if (!w || !w.activeSheetId) return w
       return {
         ...w,
-        sheets: w.sheets.map((s) => {
-          if (s.id !== w.activeSheetId) return s
-          return { ...s, rows: [...s.rows, s.columns.map(() => null)] }
-        }),
+        sheets: w.sheets.map((s) =>
+          s.id === w.activeSheetId ? { ...s, rows: [...s.rows, s.columns.map(() => null)] } : s,
+        ),
       }
     })
   }, [])
@@ -243,14 +219,15 @@ export function HarmozaProvider({ children }: { children: ReactNode }) {
       if (!w || !w.activeSheetId) return w
       return {
         ...w,
-        sheets: w.sheets.map((s) => {
-          if (s.id !== w.activeSheetId) return s
-          return {
-            ...s,
-            columns: [...s.columns, { name, type: 'text' }],
-            rows: s.rows.map((r) => [...r, null]),
-          }
-        }),
+        sheets: w.sheets.map((s) =>
+          s.id === w.activeSheetId
+            ? {
+                ...s,
+                columns: [...s.columns, { name, type: 'text' }],
+                rows: s.rows.map((r) => [...r, null]),
+              }
+            : s,
+        ),
       }
     })
   }, [])
@@ -270,10 +247,10 @@ export function HarmozaProvider({ children }: { children: ReactNode }) {
 
   const addComponent = useCallback(
     (c: Omit<DashComponent, 'id'>) => {
-      const id = `dash-${uid()}`
+      const id = 'dash-' + uid()
       const maxY = layout.reduce((m, l) => Math.max(m, l.y + l.h), 0)
-      setLayout((prev) => [...prev, { i: id, x: 0, y: maxY, w: 5, h: 4 }])
-      setComponents((comps) => [...comps, { ...c, id } as DashComponent])
+      setLayout((p) => [...p, { i: id, x: 0, y: maxY, w: 5, h: 4 }])
+      setComponents((cs) => [...cs, { ...c, id } as DashComponent])
     },
     [layout],
   )
@@ -288,19 +265,17 @@ export function HarmozaProvider({ children }: { children: ReactNode }) {
       setComponents((cs) => {
         const c = cs.find((x) => x.id === id)
         if (!c) return cs
-        const nid = `dash-${uid()}`
+        const nid = 'dash-' + uid()
         const l = layout.find((x) => x.i === id)
         const maxY = layout.reduce((m, x) => Math.max(m, x.y + x.h), 0)
-        setLayout((prev) => [...prev, { i: nid, x: 0, y: maxY, w: l?.w ?? 5, h: l?.h ?? 4 }])
-        return [...cs, { ...c, id: nid, title: `${c.title} (cópia)` }]
+        setLayout((p) => [...p, { i: nid, x: 0, y: maxY, w: l?.w ?? 5, h: l?.h ?? 4 }])
+        return [...cs, { ...c, id: nid, title: c.title + ' (cópia)' }]
       })
     },
     [layout],
   )
 
-  const moveComponent = useCallback((newLayout: DashLayoutItem[]) => {
-    setLayout(newLayout)
-  }, [])
+  const moveComponent = useCallback((newLayout: DashLayoutItem[]) => setLayout(newLayout), [])
 
   const speak = useCallback((text: string) => {
     try {
@@ -314,7 +289,7 @@ export function HarmozaProvider({ children }: { children: ReactNode }) {
       if (pt) u.voice = pt
       window.speechSynthesis.speak(u)
     } catch {
-      /* síntese indisponível */
+      /* noop */
     }
   }, [])
 
@@ -337,7 +312,7 @@ export function HarmozaProvider({ children }: { children: ReactNode }) {
           ? wb.sheets.map((s) => ({
               name: s.name,
               rowCount: s.rows.length,
-              columns: s.columns.map((c) => `${c.name} (${c.type})`),
+              columns: s.columns.map((c) => c.name + ' (' + c.type + ')'),
             }))
           : [],
         dashboard: components.map((c) => ({ id: c.id, title: c.title, kind: c.kind })),
@@ -348,16 +323,15 @@ export function HarmozaProvider({ children }: { children: ReactNode }) {
           method: 'POST',
           body: JSON.stringify({ question: trimmed, data: ctxData }),
         })
-        const reply: string = res?.reply ?? 'Desculpe, não consegui processar sua solicitação.'
+        const reply: string = res?.reply ?? 'Desculpe, não consegui processar.'
         const action: string | null = res?.action ?? null
         const params: Record<string, unknown> = res?.params ?? {}
         let finalReply = reply
         let finalAction = action
-
         if (action && activeSheet) {
           setAgentStatus('executing')
           try {
-            const executed = executeAgentAction(action, params, {
+            const ex = executeAgentAction(action, params, {
               sheet: activeSheet,
               addComponent,
               removeComponent,
@@ -367,14 +341,13 @@ export function HarmozaProvider({ children }: { children: ReactNode }) {
               setView,
               addColumn,
             })
-            finalReply = executed.reply ?? reply
-            finalAction = executed.action
-          } catch (err) {
-            finalReply = `Não consegui executar essa ação: ${err instanceof Error ? err.message : 'erro inesperado'}`
+            finalReply = ex.reply ?? reply
+            finalAction = ex.action
+          } catch {
+            finalReply = 'Não consegui executar essa ação.'
             finalAction = null
           }
         }
-
         setAgentMessages((m) => [
           ...m,
           {
@@ -387,14 +360,13 @@ export function HarmozaProvider({ children }: { children: ReactNode }) {
         ])
         setAgentStatus('done')
         speak(finalReply)
-      } catch (err) {
-        const msg = err instanceof Error ? err.message : 'Erro ao falar com o agente.'
+      } catch {
         setAgentMessages((m) => [
           ...m,
           {
             id: uid(),
             role: 'assistant',
-            content: `Não consegui falar com o agente agora: ${msg}`,
+            content: 'Não consegui falar com o agente agora.',
             created: Date.now(),
           },
         ])
@@ -429,7 +401,6 @@ export function HarmozaProvider({ children }: { children: ReactNode }) {
     renameSheet,
     deleteSheet,
     updateSheet,
-    setCell,
     addRow,
     addColumn,
     importFile,
@@ -464,7 +435,7 @@ function executeAgentAction(
     addComponent: (c: Omit<DashComponent, 'id'>) => void
     removeComponent: (id: string) => void
     components: DashComponent[]
-    createSheet: (name: string, fromSheetId?: string) => void
+    createSheet: (name: string) => void
     speak: (t: string) => void
     setView: (v: ViewMode) => void
     addColumn: (name: string) => void
@@ -485,15 +456,8 @@ function executeAgentAction(
               : kindRaw === 'table'
                 ? 'table'
                 : 'bar'
-      const groupCol = String(params.groupBy ?? params.group ?? '')
-      const valueCol = String(params.valueBy ?? params.value ?? '')
-      const gIdx = sheet.columns.findIndex((c) => c.name.toLowerCase() === groupCol.toLowerCase())
-      const vIdx = sheet.columns.findIndex((c) => c.name.toLowerCase() === valueCol.toLowerCase())
-      const tIdx = gIdx >= 0 ? gIdx : sheet.columns.findIndex((c) => c.type === 'text')
-      const nIdx =
-        vIdx >= 0
-          ? vIdx
-          : sheet.columns.findIndex((c) => c.type === 'number' || c.type === 'currency')
+      const tIdx = sheet.columns.findIndex((c) => c.type === 'text')
+      const nIdx = sheet.columns.findIndex((c) => c.type === 'number' || c.type === 'currency')
       if (tIdx >= 0 && nIdx >= 0) {
         const m = new Map<string, number>()
         for (const r of sheet.rows) {
@@ -511,10 +475,7 @@ function executeAgentAction(
           data,
           config: { currency: sheet.columns[nIdx].type === 'currency' },
         })
-        return {
-          reply: `Pronto! Criei o gráfico "${title}" com os dados reais da planilha.`,
-          action,
-        }
+        return { reply: 'Pronto! Criei o gráfico "' + title + '" com os dados reais.', action }
       }
       return { reply: 'Não encontrei colunas suficientes para criar esse gráfico.', action: null }
     }
@@ -525,9 +486,9 @@ function executeAgentAction(
       )
       if (comp) {
         removeComponent(comp.id)
-        return { reply: `Removi o componente "${comp.title}".`, action }
+        return { reply: 'Removi o componente "' + comp.title + '".', action }
       }
-      return { reply: 'Não encontrei um componente com esse nome para remover.', action: null }
+      return { reply: 'Não encontrei um componente com esse nome.', action: null }
     }
     case 'move_chart': {
       const target = String(params.title ?? params.target ?? '')
@@ -535,10 +496,7 @@ function executeAgentAction(
         (c) => target && c.title.toLowerCase().includes(target.toLowerCase()),
       )
       if (!comp) return { reply: 'Não encontrei o componente para mover.', action: null }
-      return {
-        reply: `Você pode arrastar "${comp.title}" para onde preferir — arraste pelo cabeçalho do card.`,
-        action,
-      }
+      return { reply: 'Arraste "' + comp.title + '" pelo cabeçalho para reposicionar.', action }
     }
     case 'add_kpi': {
       const title = String(params.title ?? 'Novo indicador')
@@ -549,13 +507,13 @@ function executeAgentAction(
         data: [{ label: title, value: 0 }],
         config: { value: value || '—' },
       })
-      return { reply: `Adicionei o indicador "${title}" ao dashboard.`, action }
+      return { reply: 'Adicionei o indicador "' + title + '" ao dashboard.', action }
     }
     case 'create_sheet': {
       const name = String(params.name ?? params.title ?? 'Nova aba')
       createSheet(name)
       setView('sheet')
-      return { reply: `Criei a nova aba "${name}" e já deixei ela selecionada.`, action }
+      return { reply: 'Criei a nova aba "' + name + '" e deixei selecionada.', action }
     }
     default:
       return { reply: undefined }

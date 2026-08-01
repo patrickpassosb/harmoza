@@ -1,7 +1,4 @@
-// HARMOZA — motor de geração automática de dashboards
-// Analisa as colunas da planilha e cria componentes que fazem sentido
-// com os dados reais. Nunca inventa valores.
-import type { CellValue, ColumnMeta, ColumnType, DashComponent, SheetData } from './types'
+import type { CellValue, ColumnMeta, DashComponent, SheetData } from './types'
 
 export interface NumberColInfo {
   col: ColumnMeta
@@ -12,29 +9,23 @@ export interface NumberColInfo {
 function isNumLike(v: CellValue): boolean {
   return typeof v === 'number' && Number.isFinite(v)
 }
-
 function fmtCurrency(v: number): string {
   return v.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
 }
-
 function fmtNumber(v: number): string {
   return v.toLocaleString('pt-BR', { maximumFractionDigits: 1 })
 }
-
 function findDateCol(columns: ColumnMeta[]): number {
   return columns.findIndex((c) => c.type === 'date' || /data|dia|mês|mes/i.test(c.name))
 }
-
 function findNumberCols(columns: ColumnMeta[]): NumberColInfo[] {
   const out: NumberColInfo[] = []
   columns.forEach((col, i) => {
-    if (col.type === 'number' || col.type === 'currency' || col.type === 'percent') {
+    if (col.type === 'number' || col.type === 'currency' || col.type === 'percent')
       out.push({ col, index: i, isCurrency: col.type === 'currency' })
-    }
   })
   return out
 }
-
 function sumCol(rows: CellValue[][], idx: number): number {
   let s = 0
   for (const r of rows) {
@@ -43,44 +34,28 @@ function sumCol(rows: CellValue[][], idx: number): number {
   }
   return s
 }
-
-function sumByGroup(rows: CellValue[][], groupIdx: number, valueIdx: number): Map<string, number> {
+function sumByGroup(rows: CellValue[][], gIdx: number, vIdx: number): Map<string, number> {
   const m = new Map<string, number>()
   for (const r of rows) {
-    const g = String(r[groupIdx] ?? '').trim()
+    const g = String(r[gIdx] ?? '').trim()
     if (!g) continue
-    const v = r[valueIdx]
+    const v = r[vIdx]
     if (!isNumLike(v)) continue
     m.set(g, (m.get(g) ?? 0) + (v as number))
   }
   return m
 }
-
-function countByGroup(rows: CellValue[][], groupIdx: number): Map<string, number> {
+function countByGroup(rows: CellValue[][], gIdx: number): Map<string, number> {
   const m = new Map<string, number>()
   for (const r of rows) {
-    const g = String(r[groupIdx] ?? '').trim()
+    const g = String(r[gIdx] ?? '').trim()
     if (!g) continue
     m.set(g, (m.get(g) ?? 0) + 1)
   }
   return m
 }
-
 function sortMapDesc(m: Map<string, number>): [string, number][] {
   return Array.from(m.entries()).sort((a, b) => b[1] - a[1])
-}
-
-function monthKey(v: CellValue): string | null {
-  if (!v) return null
-  const s = String(v)
-  const m = s.match(/^(\d{4})-(\d{2})/)
-  if (m) return `${m[1]}-${m[2]}`
-  const m2 = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{2,4})/)
-  if (m2) {
-    const y = m2[3].length === 2 ? `20${m2[3]}` : m2[3]
-    return `${y}-${String(m2[2]).padStart(2, '0')}`
-  }
-  return null
 }
 
 const TITLES: Record<string, string> = {
@@ -96,11 +71,10 @@ const TITLES: Record<string, string> = {
   preço: 'Preço',
   preco: 'Preço',
 }
-
 function niceLabel(name: string): string {
-  const lower = name.toLowerCase()
+  const l = name.toLowerCase()
   for (const [k, v] of Object.entries(TITLES)) {
-    if (lower.includes(k)) return v
+    if (l.includes(k)) return v
   }
   return name
 }
@@ -116,7 +90,6 @@ export function generateDashboard(sheet: SheetData): GeneratedDashboard {
   const layout: { i: string; x: number; y: number; w: number; h: number }[] = []
   let yPos = 0
   let xPos = 0
-  const colW = 3
 
   const dateIdx = findDateCol(columns)
   const numCols = findNumberCols(columns)
@@ -126,7 +99,7 @@ export function generateDashboard(sheet: SheetData): GeneratedDashboard {
     .map(({ c, i }) => ({ col: c, index: i }))
 
   const push = (comp: Omit<DashComponent, 'id'>, w = 6, h = 4) => {
-    const id = `dash-${components.length}-${Date.now().toString(36)}`
+    const id = 'dash-' + components.length + '-' + Date.now().toString(36)
     components.push({ ...comp, id } as DashComponent)
     layout.push({ i: id, x: xPos % 12, y: yPos, w, h })
     xPos += w
@@ -142,38 +115,32 @@ export function generateDashboard(sheet: SheetData): GeneratedDashboard {
   const qtyCol = numCols.find((n) => /quantidade|qtd/i.test(n.col.name))
 
   if (revenueCol) {
-    const total = sumCol(rows, revenueCol.index)
-    kpis.push({
-      title: 'Receita Total',
-      value: fmtCurrency(total),
-      sub: `${rows.length} registros`,
-    })
+    const t = sumCol(rows, revenueCol.index)
+    kpis.push({ title: 'Receita Total', value: fmtCurrency(t), sub: rows.length + ' registros' })
   }
   if (profitCol) {
-    const total = sumCol(rows, profitCol.index)
-    kpis.push({ title: 'Lucro Total', value: fmtCurrency(total), sub: 'soma da coluna de lucro' })
+    const t = sumCol(rows, profitCol.index)
+    kpis.push({ title: 'Lucro Total', value: fmtCurrency(t), sub: 'soma da coluna de lucro' })
   }
   if (revenueCol) {
-    const total = sumCol(rows, revenueCol.index)
+    const t = sumCol(rows, revenueCol.index)
     const n = rows.length
-    if (n > 0)
-      kpis.push({ title: 'Ticket Médio', value: fmtCurrency(total / n), sub: `${n} pedidos` })
+    if (n > 0) kpis.push({ title: 'Ticket Médio', value: fmtCurrency(t / n), sub: n + ' pedidos' })
   }
   if (qtyCol) {
-    const total = sumCol(rows, qtyCol.index)
-    kpis.push({ title: 'Quantidade Vendida', value: fmtNumber(total), sub: 'unidades' })
+    const t = sumCol(rows, qtyCol.index)
+    kpis.push({ title: 'Quantidade Vendida', value: fmtNumber(t), sub: 'unidades' })
   }
   if (kpis.length === 0 && numCols.length > 0) {
     const nc = numCols[0]
-    const total = sumCol(rows, nc.index)
+    const t = sumCol(rows, nc.index)
     kpis.push({
-      title: `Total de ${niceLabel(nc.col.name)}`,
-      value: nc.isCurrency ? fmtCurrency(total) : fmtNumber(total),
+      title: 'Total de ' + niceLabel(nc.col.name),
+      value: nc.isCurrency ? fmtCurrency(t) : fmtNumber(t),
       sub: 'soma dos registros',
     })
   }
   kpis.push({ title: 'Registros', value: String(rows.length), sub: 'linhas importadas' })
-
   kpis.forEach((k) => {
     push(
       {
@@ -183,19 +150,17 @@ export function generateDashboard(sheet: SheetData): GeneratedDashboard {
         data: [{ label: k.title, value: 0 }],
         config: { value: k.value },
       },
-      colW,
+      3,
       3,
     )
   })
 
   if (dateIdx >= 0 && revenueCol) {
     const byMonth = sumByGroup(rows, dateIdx, revenueCol.index)
-    const months = Array.from(byMonth.keys()).sort()
-    const data = months.map((m) => ({
-      label: m,
-      value: Math.round((byMonth.get(m) ?? 0) * 100) / 100,
-    }))
-    if (data.length > 0) {
+    const data = Array.from(byMonth.keys())
+      .sort()
+      .map((m) => ({ label: m, value: Math.round((byMonth.get(m) ?? 0) * 100) / 100 }))
+    if (data.length > 0)
       push(
         {
           kind: 'line',
@@ -207,7 +172,6 @@ export function generateDashboard(sheet: SheetData): GeneratedDashboard {
         7,
         4,
       )
-    }
   }
 
   const catIdx = textCols.find(({ col }) => /categoria|departamento/i.test(col.name))?.index ?? -1
@@ -217,8 +181,7 @@ export function generateDashboard(sheet: SheetData): GeneratedDashboard {
   const valueIdx = revenueCol?.index ?? numCols[0]?.index ?? -1
 
   if (catIdx >= 0 && valueIdx >= 0) {
-    const byCat = sumByGroup(rows, catIdx, valueIdx)
-    const data = sortMapDesc(byCat)
+    const data = sortMapDesc(sumByGroup(rows, catIdx, valueIdx))
       .slice(0, 8)
       .map(([label, value]) => ({ label, value: Math.round(value * 100) / 100 }))
     if (data.length > 0)
@@ -234,10 +197,8 @@ export function generateDashboard(sheet: SheetData): GeneratedDashboard {
         4,
       )
   }
-
   if (prodIdx >= 0 && valueIdx >= 0) {
-    const byProd = sumByGroup(rows, prodIdx, valueIdx)
-    const data = sortMapDesc(byProd)
+    const data = sortMapDesc(sumByGroup(rows, prodIdx, valueIdx))
       .slice(0, 6)
       .map(([label, value]) => ({ label, value: Math.round(value * 100) / 100 }))
     if (data.length > 0)
@@ -253,10 +214,8 @@ export function generateDashboard(sheet: SheetData): GeneratedDashboard {
         4,
       )
   }
-
   if (regIdx >= 0 && valueIdx >= 0) {
-    const byReg = sumByGroup(rows, regIdx, valueIdx)
-    const data = sortMapDesc(byReg).map(([label, value]) => ({
+    const data = sortMapDesc(sumByGroup(rows, regIdx, valueIdx)).map(([label, value]) => ({
       label,
       value: Math.round(value * 100) / 100,
     }))
@@ -273,10 +232,11 @@ export function generateDashboard(sheet: SheetData): GeneratedDashboard {
         4,
       )
   }
-
   if (statusIdx >= 0) {
-    const byStatus = countByGroup(rows, statusIdx)
-    const data = sortMapDesc(byStatus).map(([label, value]) => ({ label, value }))
+    const data = sortMapDesc(countByGroup(rows, statusIdx)).map(([label, value]) => ({
+      label,
+      value,
+    }))
     if (data.length > 0)
       push(
         {
@@ -290,17 +250,12 @@ export function generateDashboard(sheet: SheetData): GeneratedDashboard {
         4,
       )
   }
-
   const sellerIdx =
-    textCols.find(({ col }) => /vendedor|vendas.*(nome|resp)|representante/i.test(col.name))
-      ?.index ?? -1
+    textCols.find(({ col }) => /vendedor|representante/i.test(col.name))?.index ?? -1
   const clientIdx =
-    textCols.find(({ col }) => /cliente|empresa|loja|mercado|padaria|restaurante/i.test(col.name))
-      ?.index ?? -1
-
+    textCols.find(({ col }) => /cliente|empresa|loja|mercado/i.test(col.name))?.index ?? -1
   if (sellerIdx >= 0 && valueIdx >= 0) {
-    const bySeller = sumByGroup(rows, sellerIdx, valueIdx)
-    const data = sortMapDesc(bySeller)
+    const data = sortMapDesc(sumByGroup(rows, sellerIdx, valueIdx))
       .slice(0, 8)
       .map(([label, value]) => ({ label, value: Math.round(value * 100) / 100 }))
     if (data.length > 0)
@@ -316,10 +271,8 @@ export function generateDashboard(sheet: SheetData): GeneratedDashboard {
         4,
       )
   }
-
   if (clientIdx >= 0 && valueIdx >= 0) {
-    const byClient = sumByGroup(rows, clientIdx, valueIdx)
-    const data = sortMapDesc(byClient)
+    const data = sortMapDesc(sumByGroup(rows, clientIdx, valueIdx))
       .slice(0, 8)
       .map(([label, value]) => ({ label, value: Math.round(value * 100) / 100 }))
     if (data.length > 0)
@@ -335,20 +288,18 @@ export function generateDashboard(sheet: SheetData): GeneratedDashboard {
         4,
       )
   }
-
   if (components.length <= 1) {
     push(
       {
         kind: 'table',
         title: 'Dados Importados',
         subtitle: 'primeiras linhas da planilha',
-        data: rows.slice(0, 10).map((_, i) => ({ label: `#${i + 1}`, value: i })),
+        data: rows.slice(0, 10).map((_, i) => ({ label: '#' + (i + 1), value: i })),
         config: {},
       },
       12,
       5,
     )
   }
-
   return { components, layout }
 }

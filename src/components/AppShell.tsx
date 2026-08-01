@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { LayoutDashboard, Sparkles } from 'lucide-react'
+import { Sparkles } from 'lucide-react'
 import { Sidebar } from './Sidebar'
 import { Header } from './Header'
 import { SheetTabs } from './SheetTabs'
@@ -104,17 +104,6 @@ export function AppShell({ initialView }: { initialView?: 'sheet' | 'dashboard' 
               />
               <div className="mt-4">
                 <SheetTable sheet={activeSheet} onChange={updateSheet} />
-              </div>
-              <div className="mt-4 flex justify-end">
-                <button
-                  onClick={() => {
-                    if (!dashReady) runAutoDashboard()
-                    else setView('dashboard')
-                  }}
-                  className="inline-flex items-center gap-2 rounded-xl bg-[#172554] px-4 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-[#172554]/90"
-                >
-                  <LayoutDashboard className="h-4 w-4" /> Ver dashboard
-                </button>
               </div>
             </div>
           )}

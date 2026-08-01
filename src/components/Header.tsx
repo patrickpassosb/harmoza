@@ -56,7 +56,10 @@ export function Header() {
               variant="ghost"
               size="sm"
               className={`gap-1.5 rounded-md px-3 ${view === 'sheet' ? 'bg-card text-foreground shadow-subtle' : 'text-muted-foreground'}`}
-              onClick={() => setView('sheet')}
+              onClick={() => {
+                setView('sheet')
+                navigate('/')
+              }}
             >
               <Table2 className="h-3.5 w-3.5" /> Planilha
             </Button>
@@ -67,6 +70,7 @@ export function Header() {
               onClick={() => {
                 if (!dashReady) runAutoDashboard()
                 else setView('dashboard')
+                navigate('/')
               }}
             >
               <LayoutDashboard className="h-3.5 w-3.5" /> Dashboard

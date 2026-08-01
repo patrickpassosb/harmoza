@@ -1,6 +1,6 @@
 // HARMOZA — barra lateral (logo, importar, navegação, sair)
 import { useRef } from 'react'
-import { Upload, Table2, LayoutDashboard, Bot, Settings, FileSpreadsheet, Plus } from 'lucide-react'
+import { Upload, Table2, LayoutDashboard, Bot, FileSpreadsheet, Plus } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { HarmozaLogo, HarmozaWordmark } from './Logo'
 import { useHarmoza } from '@/lib/store'
@@ -38,7 +38,10 @@ export function Sidebar() {
           className="hidden"
           onChange={(e) => {
             const f = e.target.files?.[0]
-            if (f) void importFile(f)
+            if (f) {
+              void importFile(f)
+              navigate('/')
+            }
             e.target.value = ''
           }}
         />
@@ -51,7 +54,10 @@ export function Sidebar() {
           return (
             <button
               key={item.key}
-              onClick={() => setView(item.key)}
+              onClick={() => {
+                setView(item.key)
+                navigate('/')
+              }}
               className={`flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors ${
                 active
                   ? 'bg-white/15 text-white'
@@ -68,12 +74,6 @@ export function Sidebar() {
         >
           <Bot className="h-4 w-4" /> Agente de IA
         </button>
-        <button
-          onClick={() => navigate('/settings')}
-          className="flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium text-white/70 transition-colors hover:bg-white/10 hover:text-white"
-        >
-          <Settings className="h-4 w-4" /> Configurações
-        </button>
       </nav>
 
       {importState === 'success' && fileName && (
@@ -87,7 +87,10 @@ export function Sidebar() {
           </div>
           <button
             className="mt-2 flex w-full items-center gap-2 rounded-lg px-3 py-2 text-xs text-white/60 transition-colors hover:text-white"
-            onClick={loadDemo}
+            onClick={() => {
+              void loadDemo()
+              navigate('/')
+            }}
           >
             <Plus className="h-3.5 w-3.5" /> Carregar demonstração
           </button>

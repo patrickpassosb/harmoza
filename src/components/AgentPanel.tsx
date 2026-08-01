@@ -1,235 +1,250 @@
-// HARMOZA — Agente de IA (painel lateral)
-// Interface compatível com AppShell: open/onClose/messages/onSend/state/onStopListening.
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { Mic, MicOff, Send, Volume2, X, Loader2, Sparkles, AlertTriangle } from 'lucide-react'
+import { X, Mic, Square, Volume2, Send, Loader2, Bot, User } from 'lucide-react'
 import { Button } from '@/components/ui/button'
-import { Textarea } from '@/components/ui/textarea'
-import { isSpeechSupported, startListening, speak, stopSpeaking } from '@/lib/speech'
-import { cn } from '@/lib/utils'
-import type { ChatMessage } from '@/lib/types'
+import { Input } from '@/components/ui/input'
+import { useHarmoza } from '@/lib/store'
 
-interface Props {
-  open: boolean
-  onClose: () => void
-  messages: ChatMessage[]
-  onSend: (text: string) => void
-  state: 'idle' | 'listening' | 'processing' | 'executing' | 'done' | 'error'
-  onStopListening: () => void
+function getRecognition(): any {
+  const w = window as any
+  const Ctor = w.SpeechRecognition || w.webkitSpeechRecognition
+  return Ctor ? new Ctor() : null
 }
+const SUGGESTIONS = [
+  'Qual foi o total de vendas?',
+  'Mostre as vendas por mês',
+  'Crie um gráfico de vendas por região',
+  'Qual região tem o melhor resultado?',
+]
 
-const PHASE_LABEL: Record<string, string> = {
-  idle: 'Pronto',
-  listening: 'Ouvindo…',
-  processing: 'Interpretando…',
-  executing: 'Executando…',
-  done: 'Concluído',
-  error: 'Ocorreu um erro',
-}
-
-export function AgentPanel({ open, onClose, messages, onSend, state, onStopListening }: Props) {
-  const [input, setInput] = useState('')
+export function AgentPanel() {
+  const { agentOpen, setAgentOpen, agentMessages, agentStatus, sendAgentText, clearAgent, speak } =
+    useHarmoza()
+  const [text, setText] = useState('')
   const [listening, setListening] = useState(false)
-  const [transcript, setTranscript] = useState('')
-  const stopListenRef = useRef<(() => void) | null>(null)
-  const endRef = useRef<HTMLDivElement>(null)
+  const [interim, setInterim] = useState('')
+  const recRef = useRef<any>(null)
+  const scrollRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
-    if (open && endRef.current) endRef.current.scrollIntoView({ behavior: 'smooth' })
-  }, [open, messages.length, state])
-
-  const handleListen = () => {
-    if (listening) {
-      stopListenRef.current?.()
-      stopListenRef.current = null
+    if (scrollRef.current) scrollRef.current.scrollTop = scrollRef.current.scrollHeight
+  }, [agentMessages, interim, agentStatus])
+  useEffect(() => {
+    if (!agentOpen && recRef.current) {
+      recRef.current.abort()
       setListening(false)
-      onStopListening()
+    }
+  }, [agentOpen])
+
+  const stopListening = useCallback(() => {
+    recRef.current?.abort()
+    recRef.current = null
+    setListening(false)
+    setInterim('')
+  }, [])
+  const startListening = useCallback(() => {
+    const rec = getRecognition()
+    if (!rec) {
+      alert('Seu navegador não suporta reconhecimento de voz. Use o Chrome.')
       return
     }
-    if (!isSpeechSupported()) return
+    rec.lang = 'pt-BR'
+    rec.continuous = false
+    rec.interimResults = true
+    rec.onresult = (e: any) => {
+      let final = '',
+        inter = ''
+      for (let i = e.resultIndex; i < e.results.length; i++) {
+        const r = e.results[i]
+        if (r.isFinal) final += r[0].transcript
+        else inter += r[0].transcript
+      }
+      if (final) {
+        setText((t) => (t ? t + ' ' + final : final))
+        setInterim('')
+      } else setInterim(inter)
+    }
+    rec.onend = () => {
+      setListening(false)
+      setInterim('')
+    }
+    rec.onerror = () => {
+      setListening(false)
+      setInterim('')
+    }
+    recRef.current = rec
     setListening(true)
-    setTranscript('')
-    stopListenRef.current = startListening({
-      onResult: (text) => {
-        setTranscript(text)
-        setInput(text)
-        setListening(false)
-        onSend(text)
-      },
-      onError: () => {
-        setListening(false)
-      },
-      onEnd: () => {
-        setListening(false)
-        stopListenRef.current = null
-      },
-    })
+    rec.start()
+  }, [])
+  const send = useCallback(
+    async (value?: string) => {
+      const msg = (value ?? text).trim()
+      if (!msg || agentStatus === 'processing' || agentStatus === 'executing') return
+      setText('')
+      stopListening()
+      await sendAgentText(msg)
+    },
+    [text, agentStatus, sendAgentText, stopListening],
+  )
+  const statusLabel: Record<string, string> = {
+    idle: 'Pronto para ajudar',
+    listening: 'Ouvindo…',
+    processing: 'Processando…',
+    executing: 'Executando ação…',
+    done: 'Ação concluída',
+    unclear: 'Não entendi',
+    error: 'Ocorreu um erro',
   }
-
-  const send = () => {
-    const text = input.trim()
-    if (!text || state === 'processing' || state === 'executing') return
-    setInput('')
-    setTranscript('')
-    onSend(text)
-  }
-
-  if (!open) return null
-
-  const lastAssistant = [...messages].reverse().find((m) => m.role === 'assistant')
-
+  if (!agentOpen) return null
   return (
-    <div className="fixed inset-y-0 right-0 z-40 flex w-full max-w-md flex-col border-l border-border bg-background shadow-2xl animate-fade-in">
-      {/* Header */}
-      <div className="flex items-center gap-2 border-b border-border bg-primary px-4 py-3 text-primary-foreground">
-        <Sparkles className="h-5 w-5 text-[#D97706]" />
-        <div className="flex-1">
-          <div className="text-sm font-bold">Agente HARMOZA</div>
-          <div className="text-[11px] text-primary-foreground/70">
-            Assistente de dados · voz e texto
+    <div className="fixed inset-y-0 right-0 z-50 flex w-full max-w-md flex-col border-l border-border bg-background shadow-2xl animate-fade-in">
+      <div className="flex items-center justify-between border-b border-border bg-card px-4 py-3">
+        <div className="flex items-center gap-2">
+          <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-primary/10 text-primary">
+            <Bot className="h-5 w-5" />
           </div>
-        </div>
-        <Button
-          variant="ghost"
-          size="icon"
-          onClick={onClose}
-          className="text-primary-foreground hover:bg-primary/80"
-        >
-          <X className="h-5 w-5" />
-        </Button>
-      </div>
-
-      {/* Fase ativa */}
-      {state !== 'idle' && state !== 'done' && (
-        <div
-          className={cn(
-            'flex items-center gap-2 border-b px-4 py-2 text-sm',
-            state === 'error'
-              ? 'border-red-200 bg-red-50 text-red-700'
-              : 'border-primary/10 bg-primary/5 text-primary',
-          )}
-        >
-          {state === 'listening' && (
-            <span className="relative flex h-2.5 w-2.5">
-              <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-red-400 opacity-75" />
-              <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-red-500" />
-            </span>
-          )}
-          {(state === 'processing' || state === 'executing') && (
-            <Loader2 className="h-4 w-4 animate-spin" />
-          )}
-          {state === 'error' && <AlertTriangle className="h-4 w-4" />}
-          <span className="font-medium">{PHASE_LABEL[state] ?? state}</span>
-        </div>
-      )}
-
-      {/* Transcrição */}
-      {transcript && (
-        <div className="border-b border-border bg-muted/40 px-4 py-2 text-sm italic text-muted-foreground">
-          🎤 “{transcript}”
-        </div>
-      )}
-
-      {/* Histórico */}
-      <div className="flex-1 space-y-3 overflow-y-auto p-4 harmoza-scroll">
-        {messages.length === 0 ? (
-          <div className="mt-8 text-center text-sm text-muted-foreground">
-            <Sparkles className="mx-auto mb-2 h-8 w-8 text-primary/40" />
-            <p className="font-medium text-foreground">Pergunte sobre seus dados</p>
-            <p className="mt-1 text-xs">
-              Ex.: “Qual o total de vendas?”, “Crie um gráfico de vendas por região”, “Adicione um
-              indicador de ticket médio”, “Remova o gráfico de pizza”.
+          <div>
+            <p className="text-sm font-semibold text-foreground">Agente HARMOZA</p>
+            <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
+              <span
+                className={
+                  'h-1.5 w-1.5 rounded-full ' +
+                  (agentStatus === 'listening' ? 'animate-pulse bg-red-500' : 'bg-emerald-500')
+                }
+              />
+              {statusLabel[agentStatus] ?? 'Pronto'}
             </p>
           </div>
-        ) : (
-          messages.map((m) => (
+        </div>
+        <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => setAgentOpen(false)}>
+          <X className="h-4 w-4" />
+        </Button>
+      </div>
+      <div ref={scrollRef} className="flex-1 space-y-3 overflow-y-auto p-4">
+        {agentMessages.length === 0 && (
+          <div className="mt-8 text-center">
+            <p className="font-medium text-foreground">Olá! Sou o agente da HARMOZA 👋</p>
+            <p className="mx-auto mt-1 max-w-xs text-sm text-muted-foreground">
+              Posso consultar seus dados, criar gráficos e gerenciar o dashboard. Fale ou digite:
+            </p>
+            <div className="mx-auto mt-4 flex max-w-xs flex-col gap-1.5 text-left">
+              {SUGGESTIONS.map((s) => (
+                <button
+                  key={s}
+                  className="rounded-lg border border-border bg-card px-3 py-2 text-left text-xs text-muted-foreground transition-colors hover:border-primary/40 hover:text-foreground"
+                  onClick={() => void send(s)}
+                >
+                  “{s}”
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+        {agentMessages.map((m) => (
+          <div
+            key={m.id}
+            className={'flex ' + (m.role === 'user' ? 'justify-end' : 'justify-start')}
+          >
             <div
-              key={m.id}
-              className={cn('flex', m.role === 'user' ? 'justify-end' : 'justify-start')}
+              className={'flex max-w-[85%] gap-2 ' + (m.role === 'user' ? 'flex-row-reverse' : '')}
             >
               <div
-                className={cn(
-                  'max-w-[85%] rounded-2xl px-3.5 py-2.5 text-sm leading-relaxed',
-                  m.role === 'user'
-                    ? 'rounded-br-sm bg-primary text-primary-foreground'
-                    : 'rounded-bl-sm border border-border bg-card text-foreground',
-                )}
+                className={
+                  'flex h-7 w-7 shrink-0 items-center justify-center rounded-full ' +
+                  (m.role === 'user'
+                    ? 'bg-primary text-primary-foreground'
+                    : 'bg-[#0F766E]/15 text-[#0F766E]')
+                }
               >
-                {m.content}
+                {m.role === 'user' ? (
+                  <User className="h-3.5 w-3.5" />
+                ) : (
+                  <Bot className="h-3.5 w-3.5" />
+                )}
+              </div>
+              <div
+                className={
+                  'rounded-2xl px-3.5 py-2.5 text-sm ' +
+                  (m.role === 'user'
+                    ? 'rounded-tr-sm bg-primary text-primary-foreground'
+                    : 'rounded-tl-sm border border-border bg-card text-foreground')
+                }
+              >
+                <p className="whitespace-pre-wrap leading-relaxed">{m.content}</p>
+                {m.role === 'assistant' && (
+                  <button
+                    className="mt-2 flex items-center gap-1 text-[11px] text-muted-foreground hover:text-foreground"
+                    onClick={() => speak(m.content)}
+                  >
+                    <Volume2 className="h-3.5 w-3.5" /> Ouvir de novo
+                  </button>
+                )}
               </div>
             </div>
-          ))
+          </div>
+        ))}
+        {interim && (
+          <div className="flex justify-end">
+            <div className="rounded-2xl border border-dashed border-primary/40 bg-primary/5 px-3.5 py-2.5 text-sm text-muted-foreground italic">
+              {interim}…
+            </div>
+          </div>
         )}
-        <div ref={endRef} />
+        {(agentStatus === 'processing' || agentStatus === 'executing') && (
+          <div className="flex items-center gap-2 text-xs text-muted-foreground">
+            <Loader2 className="h-3.5 w-3.5 animate-spin" />
+            {agentStatus === 'executing'
+              ? 'Executando ação no dashboard…'
+              : 'Analisando seus dados…'}
+          </div>
+        )}
       </div>
-
-      {/* Input */}
       <div className="border-t border-border bg-card p-3">
-        <div className="flex items-end gap-2">
-          <Textarea
-            value={input}
-            onChange={(e) => setInput(e.target.value)}
-            placeholder="Digite um comando…"
-            className="min-h-[44px] max-h-28 flex-1 resize-none"
-            rows={1}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter' && !e.shiftKey) {
-                e.preventDefault()
-                send()
-              }
-            }}
-          />
+        <div className="flex items-center gap-2">
           <Button
-            variant={listening ? 'destructive' : 'default'}
+            variant={listening ? 'destructive' : 'outline'}
             size="icon"
-            onClick={handleListen}
-            className={cn('h-11 w-11 shrink-0', listening && 'animate-pulse')}
+            className="h-10 w-10 shrink-0"
+            onClick={listening ? stopListening : startListening}
             title={listening ? 'Parar gravação' : 'Falar'}
           >
-            {listening ? <MicOff className="h-5 w-5" /> : <Mic className="h-5 w-5" />}
+            {listening ? <Square className="h-4 w-4" /> : <Mic className="h-4 w-4" />}
           </Button>
+          <Input
+            value={text}
+            onChange={(e) => setText(e.target.value)}
+            onKeyDown={(e) => e.key === 'Enter' && void send()}
+            placeholder={listening ? 'Fale agora…' : 'Pergunte ou dê um comando…'}
+            className="h-10"
+          />
           <Button
+            className="h-10 w-10 shrink-0"
             size="icon"
-            className="h-11 w-11 shrink-0"
-            onClick={send}
-            disabled={!input.trim() || state === 'processing'}
+            onClick={() => void send()}
+            disabled={!text.trim() || agentStatus === 'processing' || agentStatus === 'executing'}
           >
-            <Send className="h-5 w-5" />
+            <Send className="h-4 w-4" />
           </Button>
         </div>
-        <div className="mt-2 flex items-center justify-between">
-          <div className="flex gap-1.5">
-            <Button
-              variant="ghost"
-              size="sm"
-              className="h-7 px-2 text-[11px] text-muted-foreground"
-              onClick={() => onSend('Crie um gráfico de vendas por região')}
-            >
-              Gráfico por região
-            </Button>
-            <Button
-              variant="ghost"
-              size="sm"
-              className="h-7 px-2 text-[11px] text-muted-foreground"
-              onClick={() => onSend('Adicione um indicador de ticket médio')}
-            >
-              + Ticket médio
-            </Button>
-          </div>
-          {lastAssistant && (
-            <Button
-              variant="ghost"
-              size="sm"
-              className="h-7 px-2 text-[11px]"
-              onClick={() => {
-                stopSpeaking()
-                speak(lastAssistant.content)
-              }}
-            >
-              <Volume2 className="h-3.5 w-3.5" /> Ouvir de novo
-            </Button>
-          )}
-        </div>
+        <p className="mt-2 text-center text-[11px] text-muted-foreground">
+          Voz usa os recursos do navegador.
+        </p>
       </div>
     </div>
+  )
+}
+
+export function AgentFab() {
+  const { setAgentOpen, agentStatus } = useHarmoza()
+  const busy =
+    agentStatus === 'processing' || agentStatus === 'executing' || agentStatus === 'listening'
+  return (
+    <Button
+      className="fixed bottom-6 right-6 z-40 h-14 w-14 rounded-full shadow-elevation"
+      size="icon"
+      onClick={() => setAgentOpen(true)}
+      title="Abrir agente"
+    >
+      {busy ? <Loader2 className="h-6 w-6 animate-spin" /> : <Bot className="h-6 w-6" />}
+    </Button>
   )
 }

@@ -1,15 +1,16 @@
 // HARMOZA — barra lateral (logo, importar, navegação, sair)
 import { useRef } from 'react'
-import { Upload, Table2, LayoutDashboard, Bot, LogOut, FileSpreadsheet, Plus } from 'lucide-react'
+import { Upload, Table2, LayoutDashboard, Bot, Settings, FileSpreadsheet, Plus } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { HarmozaLogo, HarmozaWordmark } from './Logo'
 import { useHarmoza } from '@/lib/store'
+import { useNavigate } from 'react-router-dom'
 import pb from '@/lib/pocketbase/client'
 
 export function Sidebar() {
-  const { view, setView, importState, importFile, loadDemo, fileName, setAgentOpen, reset } =
-    useHarmoza()
+  const { view, setView, importState, importFile, loadDemo, fileName, setAgentOpen } = useHarmoza()
   const inputRef = useRef<HTMLInputElement>(null)
+  const navigate = useNavigate()
 
   const navItems = [
     { key: 'sheet' as const, label: 'Planilha', icon: Table2 },
@@ -67,6 +68,12 @@ export function Sidebar() {
         >
           <Bot className="h-4 w-4" /> Agente de IA
         </button>
+        <button
+          onClick={() => navigate('/settings')}
+          className="flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium text-white/70 transition-colors hover:bg-white/10 hover:text-white"
+        >
+          <Settings className="h-4 w-4" /> Configurações
+        </button>
       </nav>
 
       {importState === 'success' && fileName && (
@@ -86,19 +93,6 @@ export function Sidebar() {
           </button>
         </div>
       )}
-
-      <div className="mt-auto px-3 pb-4">
-        <button
-          className="flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium text-white/70 transition-colors hover:bg-white/10 hover:text-white"
-          onClick={() => {
-            pb.authStore.clear()
-            reset()
-            window.location.reload()
-          }}
-        >
-          <LogOut className="h-4 w-4" /> Sair
-        </button>
-      </div>
     </aside>
   )
 }

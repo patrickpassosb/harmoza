@@ -1,8 +1,17 @@
 // HARMOZA — cabeçalho principal
-import { Bot, Table2, LayoutDashboard } from 'lucide-react'
+import { Bot, Table2, LayoutDashboard, Settings, LogOut } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { ExportButton } from '@/components/ExportButton'
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu'
 import { useHarmoza } from '@/lib/store'
+import { useNavigate } from 'react-router-dom'
 import pb from '@/lib/pocketbase/client'
 
 export function Header() {
@@ -18,6 +27,7 @@ export function Header() {
     runAutoDashboard,
   } = useHarmoza()
   const user = pb.authStore.record
+  const navigate = useNavigate()
 
   return (
     <header className="flex h-14 shrink-0 items-center justify-between gap-4 border-b border-border bg-card px-5">
@@ -68,9 +78,40 @@ export function Header() {
           <Bot className="h-4 w-4" />
           <span className="hidden sm:inline">Agente</span>
         </Button>
-        <div className="flex h-8 w-8 items-center justify-center rounded-full bg-primary text-xs font-bold text-primary-foreground">
-          {(user?.name as string | undefined)?.charAt(0)?.toUpperCase() ?? 'H'}
-        </div>
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <button className="flex h-8 w-8 items-center justify-center rounded-full bg-primary text-xs font-bold text-primary-foreground transition-opacity hover:opacity-80">
+              {(user?.name as string | undefined)?.charAt(0)?.toUpperCase() ?? 'H'}
+            </button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end" className="w-56">
+            <DropdownMenuLabel className="flex flex-col gap-0.5">
+              <span className="text-sm font-medium text-foreground">
+                {(user?.name as string) || 'Usuário'}
+              </span>
+              <span className="text-xs text-muted-foreground">{(user?.email as string) || ''}</span>
+            </DropdownMenuLabel>
+            <DropdownMenuSeparator />
+            <DropdownMenuItem
+              className="cursor-pointer gap-2"
+              onClick={() => navigate('/settings')}
+            >
+              <Settings className="h-4 w-4" />
+              Configurações
+            </DropdownMenuItem>
+            <DropdownMenuSeparator />
+            <DropdownMenuItem
+              className="cursor-pointer gap-2 text-red-600 focus:text-red-600"
+              onClick={() => {
+                pb.authStore.clear()
+                window.location.reload()
+              }}
+            >
+              <LogOut className="h-4 w-4" />
+              Sair
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
       </div>
     </header>
   )

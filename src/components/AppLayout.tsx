@@ -92,6 +92,20 @@ export function AppLayout({ section, onSection, onOpenAgent, onImport, children 
               <span className="truncate">Importar planilha</span>
             </button>
           )}
+
+          <button
+            onClick={() => {
+              window.location.href = '/settings'
+            }}
+            className={cn(
+              'flex w-full items-center gap-2.5 rounded-lg px-3 py-2 text-sm font-medium text-white/70 transition-colors hover:bg-white/10 hover:text-white',
+              collapsed && 'justify-center px-0',
+            )}
+            title="Configurações"
+          >
+            <Settings className="h-4.5 w-4.5 shrink-0" />
+            {!collapsed && <span className="truncate">Configurações</span>}
+          </button>
         </div>
 
         <div className="border-t border-white/10 p-2">

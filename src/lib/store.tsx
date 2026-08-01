@@ -50,6 +50,7 @@ interface HarmozaCtx {
   switchWorkbook: (id: string) => void
   reset: () => void
   fetchRemoteWorkbooks: () => Promise<void>
+  deleteWorkbook: (id: string) => Promise<{ error: string | null }>
   components: DashComponent[]
   layout: DashLayoutItem[]
   dashReady: boolean
@@ -572,6 +573,59 @@ export function HarmozaProvider({ children }: { children: ReactNode }) {
     ],
   )
 
+  const deleteWorkbook = useCallback(
+    async (id: string): Promise<{ error: string | null }> => {
+      const wb = workbooks.find((w) => w.id === id)
+      if (!wb) return { error: 'Arquivo não encontrado.' }
+      try {
+        if (pb.authStore.isValid && pb.authStore.record?.id) {
+          try {
+            const records = await pb.collection('workbooks').getList(1, 1, {
+              filter: `owner = "${pb.authStore.record.id}" && fileName = "${wb.fileName}"`,
+            })
+            if (records.items.length > 0) {
+              await pb.collection('workbooks').delete(records.items[0].id)
+            }
+          } catch (e) {
+            console.warn('Could not delete workbook from backend:', e)
+          }
+        }
+        setWorkbooks((prev) => {
+          const filtered = prev.filter((w) => w.id !== id)
+          if (activeWorkbookId === id) {
+            if (filtered.length > 0) {
+              const next = filtered[0]
+              setActiveWorkbookId(next.id)
+              const sheet = next.sheets.find((s) => s.id === next.activeSheetId) ?? next.sheets[0]
+              if (sheet) {
+                const gen = generateDashboard(sheet)
+                setComponents(gen.components)
+                setLayout(gen.layout)
+                setDashReady(true)
+              }
+            } else {
+              setActiveWorkbookId(null)
+              setImportState('idle')
+              setComponents([])
+              setLayout([])
+              setDashReady(false)
+            }
+          }
+          return filtered
+        })
+        toast.success('Arquivo excluído', {
+          description: `"${wb.fileName}" foi removido com sucesso.`,
+        })
+        return { error: null }
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : 'Não foi possível excluir o arquivo.'
+        toast.error('Erro ao excluir', { description: msg })
+        return { error: msg }
+      }
+    },
+    [workbooks, activeWorkbookId],
+  )
+
   const clearAgent = useCallback(() => setAgentMessages([]), [])
 
   const value: HarmozaCtx = {
@@ -597,6 +651,7 @@ export function HarmozaProvider({ children }: { children: ReactNode }) {
     switchWorkbook,
     reset,
     fetchRemoteWorkbooks,
+    deleteWorkbook,
     components,
     layout,
     dashReady,

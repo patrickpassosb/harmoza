@@ -1,6 +1,22 @@
-import { useRef } from 'react'
-import { Upload, Table2, LayoutDashboard, Bot, FileSpreadsheet, Plus } from 'lucide-react'
+import { useRef, useState } from 'react'
+import {
+  Upload,
+  Table2,
+  LayoutDashboard,
+  Bot,
+  FileSpreadsheet,
+  Plus,
+  Trash2,
+  Loader2,
+} from 'lucide-react'
 import { Button } from '@/components/ui/button'
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogFooter,
+} from '@/components/ui/dialog'
 import { HarmozaLogo, HarmozaWordmark } from './Logo'
 import { useHarmoza } from '@/lib/store'
 import { useNavigate } from 'react-router-dom'
@@ -15,14 +31,27 @@ export function Sidebar() {
     activeWorkbookId,
     switchWorkbook,
     setAgentOpen,
+    deleteWorkbook,
   } = useHarmoza()
   const inputRef = useRef<HTMLInputElement>(null)
   const navigate = useNavigate()
+  const [deleteTarget, setDeleteTarget] = useState<{ id: string; fileName: string } | null>(null)
+  const [isDeleting, setIsDeleting] = useState(false)
 
   const navItems = [
     { key: 'sheet' as const, label: 'Planilha', icon: Table2 },
     { key: 'dashboard' as const, label: 'Dashboard', icon: LayoutDashboard },
   ]
+
+  const handleConfirmDelete = async () => {
+    if (!deleteTarget || isDeleting) return
+    setIsDeleting(true)
+    const result = await deleteWorkbook(deleteTarget.id)
+    setIsDeleting(false)
+    if (!result.error) {
+      setDeleteTarget(null)
+    }
+  }
 
   return (
     <aside className="flex h-screen w-60 shrink-0 flex-col border-r border-sidebar-border bg-[#172554] text-white">
@@ -94,24 +123,37 @@ export function Sidebar() {
           {workbooks.map((wb) => {
             const isActive = wb.id === activeWorkbookId
             const isDemo = wb.id === 'demo-workbook'
+            const displayName = isDemo ? 'Demonstração' : wb.fileName
             return (
-              <button
+              <div
                 key={wb.id}
-                onClick={() => {
-                  switchWorkbook(wb.id)
-                  navigate('/')
-                }}
-                className={`flex items-center gap-2 rounded-lg px-3 py-2.5 text-left transition-colors ${
+                className={`group flex items-center gap-2 rounded-lg px-3 py-2.5 transition-colors ${
                   isActive
                     ? 'bg-white/15 text-white'
                     : 'text-white/70 hover:bg-white/10 hover:text-white'
                 }`}
               >
-                <FileSpreadsheet
-                  className={`h-4 w-4 shrink-0 ${isActive ? 'text-emerald-300' : 'text-white/50'}`}
-                />
-                <span className="truncate text-xs">{isDemo ? 'Demonstração' : wb.fileName}</span>
-              </button>
+                <button
+                  onClick={() => {
+                    switchWorkbook(wb.id)
+                    navigate('/')
+                  }}
+                  className="flex min-w-0 flex-1 items-center gap-2 text-left"
+                >
+                  <FileSpreadsheet
+                    className={`h-4 w-4 shrink-0 ${isActive ? 'text-emerald-300' : 'text-white/50'}`}
+                  />
+                  <span className="truncate text-xs">{displayName}</span>
+                </button>
+                <button
+                  onClick={() => setDeleteTarget({ id: wb.id, fileName: displayName })}
+                  disabled={isDeleting}
+                  aria-label="Excluir arquivo"
+                  className="shrink-0 rounded p-1 text-white/40 opacity-0 transition-all hover:bg-red-500/20 hover:text-red-300 group-hover:opacity-100 disabled:opacity-50"
+                >
+                  <Trash2 className="h-3.5 w-3.5" />
+                </button>
+              </div>
             )
           })}
         </div>
@@ -125,6 +167,37 @@ export function Sidebar() {
           <Plus className="h-3.5 w-3.5" /> Carregar demonstração
         </button>
       </div>
+
+      <Dialog
+        open={!!deleteTarget}
+        onOpenChange={(open) => !open && !isDeleting && setDeleteTarget(null)}
+      >
+        <DialogContent className="sm:max-w-[400px]">
+          <DialogHeader>
+            <DialogTitle>Excluir arquivo</DialogTitle>
+          </DialogHeader>
+          <p className="text-sm text-muted-foreground">
+            Tem certeza que deseja excluir{' '}
+            <span className="font-semibold text-foreground">"{deleteTarget?.fileName}"</span>? Esta
+            ação não pode ser desfeita.
+          </p>
+          <DialogFooter className="gap-2">
+            <Button variant="outline" onClick={() => setDeleteTarget(null)} disabled={isDeleting}>
+              Cancelar
+            </Button>
+            <Button variant="destructive" onClick={handleConfirmDelete} disabled={isDeleting}>
+              {isDeleting ? (
+                <>
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  Excluindo...
+                </>
+              ) : (
+                'Excluir'
+              )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </aside>
   )
 }

@@ -1,46 +1,37 @@
-// HARMOZA — logo (SVG)
-export function HarmozaLogo({ size = 32, className = '' }: { size?: number; className?: string }) {
-  return (
-    <svg
-      width={size}
-      height={size}
-      viewBox="0 0 64 64"
-      fill="none"
-      className={className}
-      aria-label="HARMOZA"
-    >
-      <rect x="2" y="2" width="60" height="60" rx="14" fill="#172554" />
-      {/* 4 formas entrelaçadas: azul, teal, laranja, roxo */}
-      <path d="M14 42 L26 22 L32 32 L38 22 L50 42 H38 L32 32 L26 42 Z" fill="#0F766E" />
-      <circle cx="32" cy="18" r="6" fill="#D97706" />
-      <circle cx="20" cy="46" r="5" fill="#6D28D9" />
-      <circle cx="44" cy="46" r="5" fill="#F59E0B" />
-    </svg>
-  )
-}
+// HARMOZA — logo e wordmark
+import { cn } from '@/lib/utils'
 
-export function HarmozaLogoDark({
+export function HarmozaLogo({
   size = 32,
-  className = '',
+  light = false,
+  showName = false,
+  className,
 }: {
   size?: number
+  light?: boolean
+  showName?: boolean
   className?: string
 }) {
   return (
-    <svg
-      width={size}
-      height={size}
-      viewBox="0 0 64 64"
-      fill="none"
-      className={className}
-      aria-label="HARMOZA"
-    >
-      <rect x="2" y="2" width="60" height="60" rx="14" fill="#0F172A" />
-      <path d="M14 42 L26 22 L32 32 L38 22 L50 42 H38 L32 32 L26 42 Z" fill="#2DD4BF" />
-      <circle cx="32" cy="18" r="6" fill="#FB923C" />
-      <circle cx="20" cy="46" r="5" fill="#A78BFA" />
-      <circle cx="44" cy="46" r="5" fill="#FBBF24" />
-    </svg>
+    <div className={cn('flex items-center gap-2', className)}>
+      <svg width={size} height={size} viewBox="0 0 48 48" fill="none" aria-hidden="true">
+        <rect x="6" y="6" width="16" height="16" rx="3" fill="#172554" />
+        <rect x="26" y="6" width="16" height="16" rx="3" fill="#0F766E" />
+        <rect x="6" y="26" width="16" height="16" rx="3" fill="#D97706" />
+        <rect x="26" y="26" width="16" height="16" rx="3" fill="#6D28D9" />
+        <circle cx="24" cy="24" r="6" fill="#F8F7F4" />
+      </svg>
+      {showName && (
+        <span
+          className={cn(
+            'text-lg font-extrabold tracking-tight',
+            light ? 'text-white' : 'text-[#172554]',
+          )}
+        >
+          HARMOZA
+        </span>
+      )}
+    </div>
   )
 }
 
@@ -51,12 +42,16 @@ export function HarmozaWordmark({
   dark?: boolean
   size?: 'sm' | 'md' | 'lg'
 }) {
-  const font = size === 'lg' ? 'text-2xl' : size === 'sm' ? 'text-base' : 'text-xl'
+  const sizes = { sm: 'text-sm', md: 'text-base', lg: 'text-xl' }
   return (
     <span
-      className={`font-display font-extrabold tracking-tight ${font} ${dark ? 'text-white' : 'text-harmoza-navy'}`}
+      className={cn(
+        'font-extrabold tracking-tight',
+        sizes[size],
+        dark ? 'text-[#172554]' : 'text-white',
+      )}
     >
-      HARMO<span className="text-harmoza-teal">ZA</span>
+      HARMOZA
     </span>
   )
 }

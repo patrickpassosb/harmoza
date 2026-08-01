@@ -1,161 +1,130 @@
-/* HARMOZA — Login / Cadastro com conta de teste visível */
-
+// HARMOZA — login com conta de demonstração visível
 import { useState } from 'react'
-import { Loader2, Sparkles, KeyRound } from 'lucide-react'
-import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
-import { Label } from '@/components/ui/label'
-import { Logo } from '@/components/Logo'
-import { useAuth } from '@/hooks/use-auth'
+import { Mail, Lock, Loader2, Sparkles } from 'lucide-react'
+import pb from '@/lib/pocketbase/client'
+import { HarmozaLogo } from '@/components/HarmozaLogo'
+
+interface Props {
+  onAuthed: () => void
+}
 
 const DEMO_EMAIL = 'demo@harmoza.com.br'
-const DEMO_PASSWORD = 'demo1234'
+const DEMO_PASS = 'demo1234'
 
-export default function Login() {
-  const { signIn, signUp, loading } = useAuth()
-  const [mode, setMode] = useState<'login' | 'signup'>('login')
+export function Login({ onAuthed }: Props) {
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
-  const [name, setName] = useState('')
-  const [error, setError] = useState('')
-  const [busy, setBusy] = useState(false)
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState<string | null>(null)
 
-  const submit = async (e?: React.FormEvent) => {
-    e?.preventDefault()
-    setError('')
-    setBusy(true)
+  const doLogin = async (em: string, pw: string) => {
+    setLoading(true)
+    setError(null)
     try {
-      if (mode === 'login') {
-        await signIn(email || DEMO_EMAIL, password || DEMO_PASSWORD)
-      } else {
-        await signUp(name, email, password)
-      }
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Falha na autenticação.')
+      await pb.collection('users').authWithPassword(em, pw)
+      onAuthed()
+    } catch {
+      setError('E-mail ou senha inválidos.')
     } finally {
-      setBusy(false)
+      setLoading(false)
     }
   }
 
+  const submit = (e: React.FormEvent) => {
+    e.preventDefault()
+    if (email && password) void doLogin(email, password)
+  }
+
   return (
-    <div className="flex min-h-screen items-center justify-center bg-background p-4">
+    <div className="flex min-h-screen items-center justify-center bg-[#F8F7F4] px-4 py-10">
       <div className="w-full max-w-md">
         <div className="mb-8 flex flex-col items-center text-center">
-          <Logo />
-          <h1 className="mt-6 text-2xl font-bold tracking-tight text-foreground">
-            {mode === 'login' ? 'Bem-vindo de volta' : 'Crie sua conta'}
+          <HarmozaLogo size={56} />
+          <h1 className="mt-5 text-2xl font-bold tracking-tight text-[#172554]">
+            Entre na HARMOZA
           </h1>
           <p className="mt-1 text-sm text-muted-foreground">
-            A gestão que se encaixa no seu negócio — do Excel ao dashboard inteligente.
+            Suas planilhas viram um sistema de gestão inteligente.
           </p>
         </div>
 
-        <div className="rounded-2xl border border-border bg-card p-6 shadow-elevation">
-          {/* Conta demo visível */}
-          <button
-            type="button"
-            onClick={() => {
-              setMode('login')
-              setEmail(DEMO_EMAIL)
-              setPassword(DEMO_PASSWORD)
-              void submit()
-            }}
-            disabled={busy}
-            className="mb-4 flex w-full items-center gap-3 rounded-xl border border-[#D97706]/40 bg-[#D97706]/10 p-3 text-left transition-colors hover:bg-[#D97706]/15"
-          >
-            <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-[#D97706] text-white">
-              <Sparkles className="h-4.5 w-4.5" />
-            </span>
-            <span className="flex-1">
-              <span className="block text-sm font-semibold text-foreground">
-                Entrar com conta de teste
-              </span>
-              <span className="block text-xs text-muted-foreground">
-                {DEMO_EMAIL} · senha {DEMO_PASSWORD}
-              </span>
-            </span>
-            <KeyRound className="h-4 w-4 text-[#D97706]" />
-          </button>
-
-          <div className="mb-4 flex items-center gap-3">
-            <div className="h-px flex-1 bg-border" />
-            <span className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
-              ou entre com
-            </span>
-            <div className="h-px flex-1 bg-border" />
-          </div>
-
+        <div className="rounded-2xl border border-border bg-white p-6 shadow-elevation">
           <form onSubmit={submit} className="space-y-4">
-            {mode === 'signup' && (
-              <div>
-                <Label htmlFor="name">Nome</Label>
-                <Input
-                  id="name"
-                  value={name}
-                  onChange={(e) => setName(e.target.value)}
-                  placeholder="Seu nome"
-                  className="mt-1"
+            <div>
+              <label className="mb-1.5 block text-xs font-semibold text-[#172554]">E-mail</label>
+              <div className="flex items-center gap-2 rounded-xl border border-border bg-white px-3 py-2.5 focus-within:border-[#0F766E]">
+                <Mail className="h-4 w-4 text-muted-foreground" />
+                <input
+                  type="email"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  placeholder="voce@empresa.com"
+                  className="flex-1 bg-transparent text-sm outline-none placeholder:text-muted-foreground"
                 />
               </div>
+            </div>
+            <div>
+              <label className="mb-1.5 block text-xs font-semibold text-[#172554]">Senha</label>
+              <div className="flex items-center gap-2 rounded-xl border border-border bg-white px-3 py-2.5 focus-within:border-[#0F766E]">
+                <Lock className="h-4 w-4 text-muted-foreground" />
+                <input
+                  type="password"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  placeholder="••••••••"
+                  className="flex-1 bg-transparent text-sm outline-none placeholder:text-muted-foreground"
+                />
+              </div>
+            </div>
+
+            {error && (
+              <p className="rounded-lg bg-red-50 px-3 py-2 text-xs font-medium text-red-600">
+                {error}
+              </p>
             )}
-            <div>
-              <Label htmlFor="email">E-mail</Label>
-              <Input
-                id="email"
-                type="email"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                placeholder="voce@empresa.com.br"
-                className="mt-1"
-              />
-            </div>
-            <div>
-              <Label htmlFor="password">Senha</Label>
-              <Input
-                id="password"
-                type="password"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                placeholder="••••••••"
-                className="mt-1"
-              />
-            </div>
 
-            {error && <p className="text-sm text-red-600">{error}</p>}
-
-            <Button type="submit" className="w-full" disabled={busy || loading}>
-              {busy || loading ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
-              {mode === 'login' ? 'Entrar' : 'Criar conta'}
-            </Button>
+            <button
+              type="submit"
+              disabled={loading || !email || !password}
+              className="flex w-full items-center justify-center gap-2 rounded-xl bg-[#172554] py-2.5 text-sm font-semibold text-white transition-colors hover:bg-[#172554]/90 disabled:opacity-40"
+            >
+              {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Entrar'}
+            </button>
           </form>
 
-          <div className="mt-4 text-center text-sm text-muted-foreground">
-            {mode === 'login' ? (
-              <>
-                Ainda não tem conta?{' '}
-                <button
-                  className="font-medium text-primary hover:underline"
-                  onClick={() => setMode('signup')}
-                >
-                  Cadastre-se
-                </button>
-              </>
-            ) : (
-              <>
-                Já tem conta?{' '}
-                <button
-                  className="font-medium text-primary hover:underline"
-                  onClick={() => setMode('login')}
-                >
-                  Entrar
-                </button>
-              </>
-            )}
+          <div className="my-5 flex items-center gap-3">
+            <span className="h-px flex-1 bg-border" />
+            <span className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+              ou
+            </span>
+            <span className="h-px flex-1 bg-border" />
+          </div>
+
+          <div className="rounded-xl border border-[#0F766E]/20 bg-[#0F766E]/5 p-4">
+            <div className="flex items-center gap-2">
+              <Sparkles className="h-4 w-4 text-[#0F766E]" />
+              <span className="text-xs font-semibold text-[#0F766E]">Conta de demonstração</span>
+            </div>
+            <p className="mt-1.5 text-xs text-muted-foreground">Use para testar sem criar conta:</p>
+            <p className="mt-1 rounded-lg bg-white px-3 py-1.5 font-mono text-xs text-[#172554]">
+              {DEMO_EMAIL} · {DEMO_PASS}
+            </p>
+            <button
+              onClick={() => void doLogin(DEMO_EMAIL, DEMO_PASS)}
+              disabled={loading}
+              className="mt-3 w-full rounded-lg bg-[#0F766E] py-2 text-xs font-semibold text-white transition-colors hover:bg-[#0F766E]/90 disabled:opacity-40"
+            >
+              {loading ? (
+                <Loader2 className="mx-auto h-3.5 w-3.5 animate-spin" />
+              ) : (
+                'Entrar como demonstração →'
+              )}
+            </button>
           </div>
         </div>
 
-        <p className="mt-6 text-center text-xs text-muted-foreground">
-          HARMOZA · ἁρμόζω — unir, encaixar, ajustar as partes para funcionarem juntas.
+        <p className="mt-6 text-center text-[11px] text-muted-foreground">
+          HARMOZA — a gestão que se encaixa no seu negócio
         </p>
       </div>
     </div>

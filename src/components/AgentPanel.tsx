@@ -1,324 +1,272 @@
-/* HARMOZA — Agente de IA (painel lateral)
-   Chat por texto + voz (Web Speech API), histórico, estados de processamento,
-   e execução real de ações sobre o dashboard/abas. */
+// HARMOZA — agente de IA (texto + voz) em painel lateral
+import { useEffect, useRef, useState } from 'react'
+import { Mic, Square, Send, Volume2, X, Bot, Loader2, Sparkles } from 'lucide-react'
+import type { AgentState, ChatMessage } from '@/lib/types'
 
-import { useCallback, useEffect, useRef, useState } from 'react'
-import {
-  Mic,
-  MicOff,
-  Send,
-  Volume2,
-  Square,
-  Sparkles,
-  X,
-  Loader2,
-  CheckCircle2,
-  AlertTriangle,
-} from 'lucide-react'
-import { Button } from '@/components/ui/button'
-import { Textarea } from '@/components/ui/textarea'
-import { useApp } from '@/lib/AppContext'
-import { askAgent } from '@/services/harmoza'
-import { buildAgentContext, applyAgentAction, generateDashboard, type Sheet } from '@/lib/harmoza'
-import { isSpeechSupported, startListening, speak, stopSpeaking } from '@/lib/speech'
-import { cn } from '@/lib/utils'
+interface Props {
+  open: boolean
+  onClose: () => void
+  messages: ChatMessage[]
+  onSend: (text: string) => void
+  state: AgentState
+  onStopListening: () => void
+}
 
-type AgentPhase =
-  | 'idle'
-  | 'listening'
-  | 'transcribing'
-  | 'processing'
-  | 'executing'
-  | 'done'
-  | 'error'
+type SpeechRecognitionCtor = new () => SpeechRecognitionLike
+interface SpeechRecognitionLike {
+  lang: string
+  interimResults: boolean
+  continuous: boolean
+  onresult:
+    | ((e: {
+        results: ArrayLike<{ 0: { transcript: string } } & { isFinal: boolean }>
+        resultIndex: number
+      }) => void)
+    | null
+  onend: (() => void) | null
+  onerror: ((e: { error: string }) => void) | null
+  start: () => void
+  stop: () => void
+}
 
-export function AgentPanel({ open, onClose }: { open: boolean; onClose: () => void }) {
-  const { state, dispatch } = useApp()
+function getSpeechRecognition(): SpeechRecognitionCtor | null {
+  const w = window as unknown as Record<string, unknown>
+  return (
+    (w.SpeechRecognition as SpeechRecognitionCtor) ||
+    (w.webkitSpeechRecognition as SpeechRecognitionCtor) ||
+    null
+  )
+}
+
+export function AgentPanel({ open, onClose, messages, onSend, state, onStopListening }: Props) {
   const [input, setInput] = useState('')
-  const [phase, setPhase] = useState<AgentPhase>('idle')
-  const [phaseText, setPhaseText] = useState('')
   const [listening, setListening] = useState(false)
   const [transcript, setTranscript] = useState('')
-  const [lastReply, setLastReply] = useState('')
-  const stopListenRef = useRef<(() => void) | null>(null)
-  const messagesEndRef = useRef<HTMLDivElement>(null)
-
-  const sheets = state.sheets
-  const activeIndex = state.activeSheetIndex
+  const [voiceEnabled, setVoiceEnabled] = useState(true)
+  const recogRef = useRef<SpeechRecognitionLike | null>(null)
+  const scrollRef = useRef<HTMLDivElement>(null)
+  const transcriptRef = useRef('')
+  transcriptRef.current = transcript
 
   useEffect(() => {
-    if (open && messagesEndRef.current) {
-      messagesEndRef.current.scrollIntoView({ behavior: 'smooth' })
+    scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: 'smooth' })
+  }, [messages, state])
+
+  // Fala a última resposta do agente
+  useEffect(() => {
+    const last = messages[messages.length - 1]
+    if (
+      last?.role === 'assistant' &&
+      voiceEnabled &&
+      typeof window !== 'undefined' &&
+      window.speechSynthesis
+    ) {
+      window.speechSynthesis.cancel()
+      const u = new SpeechSynthesisUtterance(last.content)
+      u.lang = 'pt-BR'
+      u.rate = 1.05
+      window.speechSynthesis.speak(u)
     }
-  }, [open, state.agentHistory.length, phase])
+  }, [messages, voiceEnabled])
 
-  const addMessage = useCallback(
-    (role: 'user' | 'assistant', content: string) => {
-      dispatch({
-        type: 'ADD_AGENT_MESSAGE',
-        message: { id: 'm-' + Date.now(), role, content, createdAt: Date.now() },
-      })
-    },
-    [dispatch],
-  )
-
-  const handleListen = () => {
-    if (listening) {
-      stopListenRef.current?.()
-      stopListenRef.current = null
-      setListening(false)
-      setPhase('idle')
+  const startListening = () => {
+    const Ctor = getSpeechRecognition()
+    if (!Ctor) {
+      setTranscript('Seu navegador não suporta reconhecimento de voz. Use o campo de texto.')
       return
     }
-    if (!isSpeechSupported()) {
-      setPhase('error')
-      setPhaseText('Seu navegador não suporta reconhecimento de voz. Use Chrome ou Edge.')
-      return
-    }
+    if (window.speechSynthesis) window.speechSynthesis.cancel()
     setListening(true)
     setTranscript('')
-    setPhase('listening')
-    stopListenRef.current = startListening({
-      onResult: (text) => {
-        setTranscript(text)
-        setInput(text)
-        setPhase('transcribing')
-      },
-      onError: (msg) => {
-        setListening(false)
-        setPhase('error')
-        setPhaseText(msg)
-      },
-      onEnd: () => {
-        setListening(false)
-        stopListenRef.current = null
-        setPhase((p) => (p === 'listening' ? 'idle' : p))
-      },
-    })
-  }
-
-  const sendMessage = async (text?: string) => {
-    const question = (text ?? input).trim()
-    if (!question) return
-    setInput('')
-    setTranscript('')
-    addMessage('user', question)
-    setPhase('processing')
-    setPhaseText('Interpretando…')
-    stopSpeaking()
-
-    try {
-      // contexto para o agente
-      const data = {
-        sheets: sheets.map((s: Sheet) => ({
-          name: s.name,
-          columns: s.columns.map((c) => c.name),
-          rowCount: s.rows.length,
-        })),
-        dashboard: state.dashboard.widgets.map((w) => ({ title: w.title, kind: w.kind })),
+    const rec = new Ctor()
+    rec.lang = 'pt-BR'
+    rec.interimResults = true
+    rec.continuous = false
+    rec.onresult = (e) => {
+      let text = ''
+      for (let i = e.resultIndex; i < e.results.length; i++) {
+        text += e.results[i][0].transcript
       }
-      const res = await askAgent(question, data)
-      const reply = res.reply || 'Entendi.'
-      const action = res.action || null
-      const params = res.params || {}
-
-      // executa a ação real
-      if (action) {
-        setPhase('executing')
-        setPhaseText('Executando…')
-        const ctx = buildAgentContext(
-          sheets,
-          (s: Sheet[]) => dispatch({ type: 'SET_SHEETS', sheets: s }),
-          activeIndex,
-          (i: number) => dispatch({ type: 'SET_ACTIVE_SHEET', index: i }),
-          state.dashboard,
-          (d) => dispatch({ type: 'SET_DASHBOARD', dashboard: d }),
-        )
-        const result = applyAgentAction(ctx, action, params)
-        const finalReply = result ? `${reply} ${result}` : reply
-        addMessage('assistant', finalReply)
-        setLastReply(finalReply)
-        setPhase('done')
-        setPhaseText('Ação concluída')
-        speak(finalReply)
-        // força regeração do dashboard se nova aba foi criada
-        if (action === 'create_sheet') {
-          const idx = ctx.sheets.length - 1
-          dispatch({ type: 'SET_ACTIVE_SHEET', index: idx })
-        }
-        if (action === 'create_chart') {
-          // gráfico criado — assegura que está no dashboard visível
-          dispatch({ type: 'SET_MODE', mode: 'dashboard' })
-        }
-      } else {
-        addMessage('assistant', reply)
-        setLastReply(reply)
-        setPhase('done')
-        setPhaseText('Respondido')
-        speak(reply)
-      }
-    } catch (err) {
-      setPhase('error')
-      setPhaseText(err instanceof Error ? err.message : 'Não consegui processar. Tente novamente.')
-      addMessage(
-        'assistant',
-        'Desculpe, tive um problema ao processar. Tente novamente em instantes.',
-      )
+      setTranscript(text)
     }
+    rec.onend = () => {
+      setListening(false)
+      const t = transcriptRef.current.trim()
+      if (t) {
+        onSend(t)
+        setTranscript('')
+      }
+    }
+    rec.onerror = (e) => {
+      setListening(false)
+      if (e.error !== 'aborted') setTranscript(`Erro de reconhecimento: ${e.error}`)
+    }
+    rec.start()
+    recogRef.current = rec
   }
 
-  const replayLast = () => {
-    if (lastReply) speak(lastReply)
+  const stopListening = () => {
+    onStopListening()
+    recogRef.current?.stop()
+    setListening(false)
+  }
+
+  const submit = () => {
+    const text = input.trim()
+    if (!text) return
+    onSend(text)
+    setInput('')
   }
 
   if (!open) return null
 
+  const stateLabel: Record<AgentState, string> = {
+    idle: 'Pronto para ajudar',
+    listening: 'Ouvindo…',
+    processing: 'Processando…',
+    executing: 'Executando ação…',
+    done: 'Concluído',
+    error: 'Não entendi',
+  }
+
   return (
-    <div className="fixed inset-y-0 right-0 z-40 flex w-full max-w-md flex-col border-l border-border bg-background shadow-2xl animate-fade-in">
-      {/* Header */}
-      <div className="flex items-center gap-2 border-b border-border bg-primary px-4 py-3 text-primary-foreground">
-        <Sparkles className="h-5 w-5 text-[#D97706]" />
-        <div className="flex-1">
-          <div className="text-sm font-bold">Agente HARMOZA</div>
-          <div className="text-[11px] text-primary-foreground/70">
-            Assistente de dados · voz e texto
+    <div className="fixed inset-y-0 right-0 z-40 flex w-full max-w-md flex-col border-l border-border bg-white shadow-2xl">
+      <div className="flex items-center justify-between border-b border-border bg-[#172554] px-4 py-3 text-white">
+        <div className="flex items-center gap-2.5">
+          <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-white/10">
+            <Bot className="h-5 w-5" />
           </div>
-        </div>
-        <Button
-          variant="ghost"
-          size="icon"
-          onClick={onClose}
-          className="text-primary-foreground hover:bg-primary/80"
-        >
-          <X className="h-5 w-5" />
-        </Button>
-      </div>
-
-      {/* Fase ativa */}
-      {phase !== 'idle' && phase !== 'done' && (
-        <div
-          className={cn(
-            'flex items-center gap-2 border-b px-4 py-2 text-sm',
-            phase === 'error'
-              ? 'border-red-200 bg-red-50 text-red-700'
-              : 'border-primary/10 bg-primary/5 text-primary',
-          )}
-        >
-          {phase === 'listening' && (
-            <>
-              <span className="relative flex h-2.5 w-2.5">
-                <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-red-400 opacity-75" />
-                <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-red-500" />
-              </span>
-              Ouvindo… fale agora
-            </>
-          )}
-          {phase === 'transcribing' && <Loader2 className="h-4 w-4 animate-spin" />}
-          {phase === 'processing' && <Loader2 className="h-4 w-4 animate-spin" />}
-          {phase === 'executing' && <Loader2 className="h-4 w-4 animate-spin" />}
-          {phase === 'error' && <AlertTriangle className="h-4 w-4" />}
-          <span className="font-medium">{phaseText || phase}</span>
-        </div>
-      )}
-
-      {/* Transcrição do áudio */}
-      {transcript && (
-        <div className="border-b border-border bg-muted/40 px-4 py-2 text-sm italic text-muted-foreground">
-          🎤 “{transcript}”
-        </div>
-      )}
-
-      {/* Histórico */}
-      <div className="flex-1 space-y-3 overflow-y-auto p-4 harmoza-scroll">
-        {state.agentHistory.length === 0 ? (
-          <div className="mt-8 text-center text-sm text-muted-foreground">
-            <Sparkles className="mx-auto mb-2 h-8 w-8 text-primary/40" />
-            <p className="font-medium text-foreground">Pergunte sobre seus dados</p>
-            <p className="mt-1 text-xs">
-              Ex.: “Qual o total de vendas?”, “Crie um gráfico de vendas por região”, “Adicione um
-              indicador de ticket médio”, “Remova o gráfico de pizza”.
+          <div>
+            <p className="text-sm font-semibold">Agente HARMOZA</p>
+            <p className="flex items-center gap-1 text-[11px] text-white/60">
+              <span
+                className={`h-1.5 w-1.5 rounded-full ${
+                  state === 'listening'
+                    ? 'animate-pulse bg-red-400'
+                    : state === 'processing' || state === 'executing'
+                      ? 'animate-pulse bg-amber-400'
+                      : 'bg-emerald-400'
+                }`}
+              />
+              {stateLabel[state]}
             </p>
           </div>
-        ) : (
-          state.agentHistory.map((m) => (
-            <div
-              key={m.id}
-              className={cn('flex', m.role === 'user' ? 'justify-end' : 'justify-start')}
-            >
-              <div
-                className={cn(
-                  'max-w-[85%] rounded-2xl px-3.5 py-2.5 text-sm leading-relaxed',
-                  m.role === 'user'
-                    ? 'rounded-br-sm bg-primary text-primary-foreground'
-                    : 'rounded-bl-sm border border-border bg-card text-foreground',
-                )}
-              >
-                {m.content}
-              </div>
-            </div>
-          ))
-        )}
-        <div ref={messagesEndRef} />
+        </div>
+        <div className="flex items-center gap-1">
+          <button
+            onClick={() => {
+              setVoiceEnabled(!voiceEnabled)
+              if (voiceEnabled && window.speechSynthesis) window.speechSynthesis.cancel()
+            }}
+            title={voiceEnabled ? 'Desativar voz' : 'Ativar voz'}
+            className={`rounded-lg p-1.5 ${voiceEnabled ? 'bg-white/10 text-white' : 'text-white/50 hover:text-white'}`}
+          >
+            <Volume2 className="h-4 w-4" />
+          </button>
+          <button
+            onClick={onClose}
+            className="rounded-lg p-1.5 text-white/60 hover:bg-white/10 hover:text-white"
+            title="Fechar"
+          >
+            <X className="h-4 w-4" />
+          </button>
+        </div>
       </div>
 
-      {/* Input */}
-      <div className="border-t border-border bg-card p-3">
-        <div className="flex items-end gap-2">
-          <Textarea
-            value={input}
-            onChange={(e) => setInput(e.target.value)}
-            placeholder="Digite um comando…"
-            className="min-h-[44px] max-h-28 flex-1 resize-none"
-            rows={1}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter' && !e.shiftKey) {
-                e.preventDefault()
-                sendMessage()
-              }
-            }}
-          />
-          <Button
-            variant={listening ? 'destructive' : 'default'}
-            size="icon"
-            onClick={handleListen}
-            className={cn('h-11 w-11 shrink-0', listening && 'animate-pulse')}
-            title={listening ? 'Parar gravação' : 'Falar'}
-          >
-            {listening ? <MicOff className="h-5 w-5" /> : <Mic className="h-5 w-5" />}
-          </Button>
-          <Button
-            size="icon"
-            className="h-11 w-11 shrink-0"
-            onClick={() => sendMessage()}
-            disabled={!input.trim() || phase === 'processing'}
-          >
-            <Send className="h-5 w-5" />
-          </Button>
-        </div>
-        <div className="mt-2 flex items-center justify-between">
-          <div className="flex gap-1.5">
-            <Button
-              variant="ghost"
-              size="sm"
-              className="h-7 px-2 text-[11px] text-muted-foreground"
-              onClick={() => sendMessage('Crie um gráfico de vendas por região')}
-            >
-              Gráfico por região
-            </Button>
-            <Button
-              variant="ghost"
-              size="sm"
-              className="h-7 px-2 text-[11px] text-muted-foreground"
-              onClick={() => sendMessage('Adicione um indicador de ticket médio')}
-            >
-              + Ticket médio
-            </Button>
+      <div ref={scrollRef} className="flex-1 space-y-3 overflow-y-auto px-4 py-4">
+        {messages.length === 0 && (
+          <div className="flex flex-col items-center gap-2 pt-8 text-center">
+            <Sparkles className="h-8 w-8 text-[#0F766E]" />
+            <p className="text-sm font-medium text-[#172554]">Pergunte sobre seus dados</p>
+            <p className="max-w-[260px] text-xs text-muted-foreground">
+              “Qual foi o total de vendas?” · “Crie um gráfico de vendas por região” · “Qual região
+              tem o melhor resultado?”
+            </p>
           </div>
-          {lastReply && (
-            <Button variant="ghost" size="sm" className="h-7 px-2 text-[11px]" onClick={replayLast}>
-              <Volume2 className="h-3.5 w-3.5" /> Ouvir de novo
-            </Button>
-          )}
+        )}
+        {messages.map((m) => (
+          <div key={m.id} className={`flex ${m.role === 'user' ? 'justify-end' : 'justify-start'}`}>
+            <div
+              className={`max-w-[85%] rounded-2xl px-3.5 py-2.5 text-sm shadow-subtle ${
+                m.role === 'user'
+                  ? 'rounded-br-md bg-[#172554] text-white'
+                  : 'rounded-bl-md bg-muted text-[#1e293b]'
+              }`}
+            >
+              <p className="whitespace-pre-wrap">{m.content}</p>
+              {m.action && (
+                <p className="mt-1.5 flex items-center gap-1 text-[11px] font-medium text-[#0F766E]">
+                  <Sparkles className="h-3 w-3" /> Ação executada no dashboard
+                </p>
+              )}
+            </div>
+          </div>
+        ))}
+        {(state === 'processing' || state === 'executing') && (
+          <div className="flex justify-start">
+            <div className="flex items-center gap-2 rounded-2xl rounded-bl-md bg-muted px-3.5 py-2.5 text-sm text-muted-foreground">
+              <Loader2 className="h-4 w-4 animate-spin text-[#0F766E]" />
+              {state === 'executing' ? 'Executando ação…' : 'Analisando dados…'}
+            </div>
+          </div>
+        )}
+        {listening && (
+          <div className="flex items-center gap-2 rounded-2xl border border-red-200 bg-red-50 px-3.5 py-2.5 text-sm text-red-700">
+            <span className="relative flex h-3 w-3">
+              <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-red-400 opacity-75" />
+              <span className="relative inline-flex h-3 w-3 rounded-full bg-red-500" />
+            </span>
+            {transcript || 'Ouvindo…'}
+          </div>
+        )}
+      </div>
+
+      <div className="border-t border-border bg-white p-3">
+        {transcript && !listening && (
+          <p className="mb-2 rounded-lg bg-muted px-3 py-1.5 text-xs text-muted-foreground">
+            Você disse: {transcript}
+          </p>
+        )}
+        <div className="flex items-center gap-2">
+          <div className="flex flex-1 items-center gap-2 rounded-xl border border-border bg-white px-3 py-2 focus-within:border-[#0F766E]">
+            <input
+              value={input}
+              onChange={(e) => setInput(e.target.value)}
+              onKeyDown={(e) => e.key === 'Enter' && submit()}
+              placeholder="Digite ou use o microfone…"
+              className="flex-1 bg-transparent text-sm outline-none placeholder:text-muted-foreground"
+            />
+            {listening ? (
+              <button
+                onClick={stopListening}
+                className="rounded-lg bg-red-500 p-1.5 text-white hover:bg-red-600"
+                title="Parar gravação"
+              >
+                <Square className="h-4 w-4" />
+              </button>
+            ) : (
+              <button
+                onClick={startListening}
+                disabled={state === 'processing' || state === 'executing'}
+                className={`rounded-lg p-1.5 transition-colors ${
+                  voiceEnabled
+                    ? 'text-[#0F766E] hover:bg-[#0F766E]/10'
+                    : 'text-muted-foreground/50 hover:bg-muted'
+                } disabled:opacity-50`}
+                title="Falar com o agente"
+              >
+                <Mic className="h-4 w-4" />
+              </button>
+            )}
+          </div>
+          <button
+            onClick={submit}
+            disabled={!input.trim() || state === 'processing' || state === 'executing'}
+            className="rounded-xl bg-[#172554] p-2.5 text-white transition-colors hover:bg-[#172554]/90 disabled:opacity-40"
+            title="Enviar"
+          >
+            <Send className="h-4 w-4" />
+          </button>
         </div>
       </div>
     </div>

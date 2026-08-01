@@ -1,4 +1,5 @@
 // HARMOZA — tipos centrais da aplicação
+// (compatível com harmoza.ts + componentes)
 
 export type ColumnType = 'text' | 'number' | 'currency' | 'percent' | 'date'
 
@@ -23,19 +24,26 @@ export interface Workbook {
   activeSheetId: string
 }
 
-export type DashKind = 'kpi' | 'bar' | 'line' | 'pie' | 'table' | 'ranking'
+export type DashKind = 'kpi' | 'bar' | 'line' | 'area' | 'pie' | 'ranking' | 'table'
 
 export interface DashComponent {
   id: string
   kind: DashKind
+  type?: DashKind
   title: string
   subtitle?: string
-  // dados agregados prontos para render (evita recomputar)
-  data?: { label: string; value: number }[]
+  // dados agregados prontos para render
+  labels?: string[]
+  values?: number[]
+  rows?: { label: string; value: number }[]
+  columnX?: string
+  columnY?: string
+  aggregation?: 'sum' | 'avg' | 'count'
+  format?: 'currency' | 'number' | 'percent'
   config: Record<string, unknown>
 }
 
-export interface DashLayoutItem {
+export interface DashboardLayoutItem {
   i: string
   x: number
   y: number
@@ -45,11 +53,7 @@ export interface DashLayoutItem {
 
 export type ViewMode = 'sheet' | 'dashboard'
 
-export type ImportState =
-  | 'idle' // nenhum arquivo importado
-  | 'loading' // arquivo sendo carregado
-  | 'success' // importado com sucesso
-  | 'error' // erro na importação
+export type ImportState = 'idle' | 'loading' | 'success' | 'error'
 
 export interface AgentMessage {
   id: string
@@ -60,10 +64,30 @@ export interface AgentMessage {
 }
 
 export type AgentStatus =
-  | 'idle' // pronto
-  | 'listening' // ouvindo
-  | 'processing' // processando
-  | 'executing' // executando ação
-  | 'done' // ação concluída
-  | 'unclear' // comando não compreendido
+  | 'idle'
+  | 'listening'
+  | 'processing'
+  | 'executing'
+  | 'done'
+  | 'unclear'
   | 'error'
+
+// --- compat com harmoza.ts ---
+export interface Sheet {
+  name: string
+  columns: ColumnMeta[]
+  rows: Record<string, unknown>[]
+}
+
+export interface AgentState {
+  open: boolean
+  messages: ChatMessage[]
+  status: AgentStatus
+}
+
+export interface ChatMessage {
+  id: string
+  role: 'user' | 'assistant'
+  content: string
+  createdAt: number
+}

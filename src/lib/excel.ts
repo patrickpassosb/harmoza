@@ -1,6 +1,11 @@
 // HARMOZA — leitura de arquivos .xlsx com SheetJS (100% no navegador)
+// (mantém compat: exporta parseWorkbook + ParsedWorkbook usados pelo UploadArea)
 import * as XLSX from 'xlsx'
 import type { CellValue, ColumnMeta, ColumnType, SheetData, Workbook } from './types'
+
+export interface ParsedWorkbook {
+  workbook: Workbook
+}
 
 function normalizeHeader(raw: unknown): string {
   return String(raw ?? '').trim()
@@ -66,19 +71,13 @@ function parseCell(v: unknown): CellValue {
   return s
 }
 
-export interface ParsedSheet {
-  name: string
-  columns: ColumnMeta[]
-  rows: CellValue[][]
-}
-
-// Converte uma planilha do SheetJS em SheetData
-function sheetToSheetData(sheetName: string, ws: XLSX.WorkSheet): ParsedSheet {
+function sheetToSheetData(sheetName: string, ws: XLSX.WorkSheet): SheetData {
   const matrix = XLSX.utils.sheet_to_json<unknown[]>(ws, { header: 1, defval: null, raw: true })
   const nonEmpty = matrix.filter((row) =>
     row.some((c) => c !== null && c !== undefined && String(c).trim() !== ''),
   )
-  if (nonEmpty.length === 0) return { name: sheetName, columns: [], rows: [] }
+  if (nonEmpty.length === 0)
+    return { id: `s-${Date.now()}`, name: sheetName, columns: [], rows: [] }
 
   const headerRow = nonEmpty[0].map((h) => normalizeHeader(h))
   const hasHeader = headerRow.some((h) => h !== '')
@@ -93,60 +92,31 @@ function sheetToSheetData(sheetName: string, ws: XLSX.WorkSheet): ParsedSheet {
     const values = dataRows.map((r) => (c < r.length ? r[c] : null))
     columns.push({ name: headers[c] || `Coluna ${c + 1}`, type: detectColumnType(values) })
   }
-
   const rows: CellValue[][] = dataRows.map((r) => {
     const out: CellValue[] = []
     for (let c = 0; c < nCols; c++) out.push(c < r.length ? parseCell(r[c]) : null)
     return out
   })
-
-  return { name: sheetName, columns, rows }
-}
-
-export interface ParseResult {
-  workbook: Workbook
-  warnings: string[]
+  return { id: `s-${Date.now()}-${sheetName}`, name: sheetName, columns, rows }
 }
 
 // Lê um File .xlsx e produz um Workbook
-export async function parseExcelFile(file: File): Promise<ParseResult> {
+export async function parseWorkbook(file: File): Promise<ParsedWorkbook> {
   const buf = await file.arrayBuffer()
   const wb = XLSX.read(buf, { type: 'array', cellDates: true })
-  const sheets: SheetData[] = wb.SheetNames.map((name, idx) => {
-    const parsed = sheetToSheetData(name, wb.Sheets[name])
-    return {
-      id: `sheet-${idx}-${Date.now()}`,
-      name: parsed.name,
-      columns: parsed.columns,
-      rows: parsed.rows,
-    }
-  }).filter((s) => s.columns.length > 0 && s.rows.length > 0)
-
+  const sheets: SheetData[] = wb.SheetNames.map((name) =>
+    sheetToSheetData(name, wb.Sheets[name]),
+  ).filter((s) => s.columns.length > 0 && s.rows.length > 0)
   if (sheets.length === 0) {
     throw new Error(
       'Nenhuma aba com dados foi encontrada no arquivo. Verifique se a planilha contém linhas e colunas preenchidas.',
     )
   }
-
-  const warnings: string[] = []
-  for (const s of sheets) {
-    if (s.rows.length > 500) {
-      warnings.push(
-        `A aba "${s.name}" tem ${s.rows.length} linhas — exibimos e calculamos tudo, mas a navegação pode ficar mais lenta.`,
-      )
-    }
-  }
-
   const workbook: Workbook = {
     id: `wb-${Date.now()}`,
     fileName: file.name,
     sheets,
     activeSheetId: sheets[0].id,
   }
-  return { workbook, warnings }
-}
-
-// Converte um Workbook para JSON (para persistir no backend se desejado)
-export function workbookToJson(wb: Workbook): string {
-  return JSON.stringify(wb)
+  return { workbook }
 }

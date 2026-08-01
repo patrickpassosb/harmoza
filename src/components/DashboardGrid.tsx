@@ -1,5 +1,5 @@
-// HARMOZA — DashboardGrid (compat): re-exporta o DashGrid
-// Mantém compatibilidade com importadores antigos do esqueleto.
-export { DashGrid as default } from './DashGrid'
-export { DashGrid } from './DashGrid'
-export { DashGrid as DashboardGrid } from './DashGrid'
+import { DashGrid } from './DashGrid'
+export function DashboardGrid(_props: Record<string, unknown>) {
+  return <DashGrid />
+}
+export default DashboardGrid

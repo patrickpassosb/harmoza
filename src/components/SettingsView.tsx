@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { ArrowLeft, User, Palette, ShieldCheck, Save } from 'lucide-react'
+import { ArrowLeft, User, Palette, ShieldCheck, Save, Webhook } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs'
@@ -9,6 +9,7 @@ import { toast } from 'sonner'
 import { ProfileSettings } from './settings/ProfileSettings'
 import { PreferencesSettings } from './settings/PreferencesSettings'
 import { SecuritySettings } from './settings/SecuritySettings'
+import { IntegrationSettings } from './settings/IntegrationSettings'
 
 interface SettingsViewProps {
   onBack: () => void
@@ -126,7 +127,7 @@ export function SettingsView({ onBack }: SettingsViewProps) {
       <Card className="border-border shadow-sm">
         <CardContent className="p-4 sm:p-6">
           <Tabs defaultValue="profile" className="space-y-6">
-            <TabsList className="grid w-full grid-cols-3 bg-muted/60">
+            <TabsList className="grid w-full grid-cols-4 bg-muted/60">
               <TabsTrigger value="profile" className="flex items-center gap-2 text-xs">
                 <User className="h-3.5 w-3.5" /> Perfil
               </TabsTrigger>
@@ -135,6 +136,9 @@ export function SettingsView({ onBack }: SettingsViewProps) {
               </TabsTrigger>
               <TabsTrigger value="security" className="flex items-center gap-2 text-xs">
                 <ShieldCheck className="h-3.5 w-3.5" /> Segurança
+              </TabsTrigger>
+              <TabsTrigger value="integration" className="flex items-center gap-2 text-xs">
+                <Webhook className="h-3.5 w-3.5" /> Integração & API
               </TabsTrigger>
             </TabsList>
 
@@ -170,6 +174,10 @@ export function SettingsView({ onBack }: SettingsViewProps) {
 
             <TabsContent value="security">
               <SecuritySettings userEmail={email} />
+            </TabsContent>
+
+            <TabsContent value="integration">
+              <IntegrationSettings />
             </TabsContent>
           </Tabs>
         </CardContent>

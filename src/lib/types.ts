@@ -15,6 +15,7 @@ export interface Workbook {
   fileName: string
   sheets: SheetData[]
   activeSheetId: string
+  source?: string
 }
 export type DashKind = 'kpi' | 'bar' | 'line' | 'pie' | 'table' | 'ranking'
 export interface DashComponent {

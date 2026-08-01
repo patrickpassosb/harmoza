@@ -1,325 +1,326 @@
-// HARMOZA — agente de IA (chat + voz)
+/* HARMOZA — Agente de IA (painel lateral)
+   Chat por texto + voz (Web Speech API), histórico, estados de processamento,
+   e execução real de ações sobre o dashboard/abas. */
+
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { X, Mic, Square, Volume2, Send, Sparkles, Loader2, Bot, User } from 'lucide-react'
+import {
+  Mic,
+  MicOff,
+  Send,
+  Volume2,
+  Square,
+  Sparkles,
+  X,
+  Loader2,
+  CheckCircle2,
+  AlertTriangle,
+} from 'lucide-react'
 import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
-import { ScrollArea } from '@/components/ui/scroll-area'
-import { useHarmoza } from '@/lib/store'
+import { Textarea } from '@/components/ui/textarea'
+import { useApp } from '@/lib/AppContext'
+import { askAgent } from '@/services/harmoza'
+import { buildAgentContext, applyAgentAction, generateDashboard, type Sheet } from '@/lib/harmoza'
+import { isSpeechSupported, startListening, speak, stopSpeaking } from '@/lib/speech'
+import { cn } from '@/lib/utils'
 
-interface SpeechRecognitionLike {
-  lang: string
-  continuous: boolean
-  interimResults: boolean
-  onresult:
-    | ((e: {
-        resultIndex: number
-        results: ArrayLike<{ isFinal: boolean; 0: { transcript: string } }>
-      }) => void)
-    | null
-  onend: (() => void) | null
-  onerror: ((e: { error: string }) => void) | null
-  start: () => void
-  stop: () => void
-  abort: () => void
-}
+type AgentPhase =
+  | 'idle'
+  | 'listening'
+  | 'transcribing'
+  | 'processing'
+  | 'executing'
+  | 'done'
+  | 'error'
 
-function getRecognition(): SpeechRecognitionLike | null {
-  const w = window as unknown as Record<string, unknown>
-  const Ctor = (w.SpeechRecognition || w.webkitSpeechRecognition) as
-    | (new () => SpeechRecognitionLike)
-    | undefined
-  return Ctor ? new Ctor() : null
-}
-
-export function AgentPanel() {
-  const { agentOpen, setAgentOpen, agentMessages, agentStatus, sendAgentText, clearAgent, speak } =
-    useHarmoza()
-  const [text, setText] = useState('')
+export function AgentPanel({ open, onClose }: { open: boolean; onClose: () => void }) {
+  const { state, dispatch } = useApp()
+  const [input, setInput] = useState('')
+  const [phase, setPhase] = useState<AgentPhase>('idle')
+  const [phaseText, setPhaseText] = useState('')
   const [listening, setListening] = useState(false)
-  const [interim, setInterim] = useState('')
-  const recRef = useRef<SpeechRecognitionLike | null>(null)
-  const scrollRef = useRef<HTMLDivElement>(null)
-  const [speaking, setSpeaking] = useState(false)
+  const [transcript, setTranscript] = useState('')
+  const [lastReply, setLastReply] = useState('')
+  const stopListenRef = useRef<(() => void) | null>(null)
+  const messagesEndRef = useRef<HTMLDivElement>(null)
 
-  // autoscroll
+  const sheets = state.sheets
+  const activeIndex = state.activeSheetIndex
+
   useEffect(() => {
-    if (scrollRef.current) {
-      scrollRef.current.scrollTop = scrollRef.current.scrollHeight
+    if (open && messagesEndRef.current) {
+      messagesEndRef.current.scrollIntoView({ behavior: 'smooth' })
     }
-  }, [agentMessages, interim, agentStatus])
+  }, [open, state.agentHistory.length, phase])
 
-  // stop listening on close
-  useEffect(() => {
-    if (!agentOpen && recRef.current) {
-      recRef.current.abort()
+  const addMessage = useCallback(
+    (role: 'user' | 'assistant', content: string) => {
+      dispatch({
+        type: 'ADD_AGENT_MESSAGE',
+        message: { id: 'm-' + Date.now(), role, content, createdAt: Date.now() },
+      })
+    },
+    [dispatch],
+  )
+
+  const handleListen = () => {
+    if (listening) {
+      stopListenRef.current?.()
+      stopListenRef.current = null
       setListening(false)
-    }
-  }, [agentOpen])
-
-  const stopListening = useCallback(() => {
-    recRef.current?.abort()
-    recRef.current = null
-    setListening(false)
-    setInterim('')
-  }, [])
-
-  const startListening = useCallback(() => {
-    const rec = getRecognition()
-    if (!rec) {
-      alert(
-        'Seu navegador não suporta reconhecimento de voz. Use o Chrome para falar com o agente.',
-      )
+      setPhase('idle')
       return
     }
-    rec.lang = 'pt-BR'
-    rec.continuous = false
-    rec.interimResults = true
-    rec.onresult = (e) => {
-      let final = ''
-      let inter = ''
-      for (let i = e.resultIndex; i < e.results.length; i++) {
-        const r = e.results[i]
-        if (r.isFinal) final += r[0].transcript
-        else inter += r[0].transcript
-      }
-      if (final) {
-        setText((t) => (t ? `${t} ${final}` : final))
-        setInterim('')
-      } else {
-        setInterim(inter)
-      }
+    if (!isSpeechSupported()) {
+      setPhase('error')
+      setPhaseText('Seu navegador não suporta reconhecimento de voz. Use Chrome ou Edge.')
+      return
     }
-    rec.onend = () => {
-      setListening(false)
-      setInterim('')
-    }
-    rec.onerror = (e) => {
-      console.log('rec error', e.error)
-      setListening(false)
-      setInterim('')
-    }
-    recRef.current = rec
     setListening(true)
-    rec.start()
-  }, [])
-
-  const send = useCallback(
-    async (value?: string) => {
-      const msg = (value ?? text).trim()
-      if (!msg || agentStatus === 'processing' || agentStatus === 'executing') return
-      setText('')
-      stopListening()
-      await sendAgentText(msg)
-    },
-    [text, agentStatus, sendAgentText, stopListening],
-  )
-
-  const replay = useCallback(
-    (content: string) => {
-      speak(content)
-      setSpeaking(true)
-      window.setTimeout(() => setSpeaking(false), Math.min(8000, content.length * 60))
-    },
-    [speak],
-  )
-
-  const statusLabel: Record<string, string> = {
-    idle: 'Pronto para ajudar',
-    listening: 'Ouvindo…',
-    processing: 'Processando…',
-    executing: 'Executando ação…',
-    done: 'Ação concluída',
-    unclear: 'Não entendi — pode reformular?',
-    error: 'Ocorreu um erro',
+    setTranscript('')
+    setPhase('listening')
+    stopListenRef.current = startListening({
+      onResult: (text) => {
+        setTranscript(text)
+        setInput(text)
+        setPhase('transcribing')
+      },
+      onError: (msg) => {
+        setListening(false)
+        setPhase('error')
+        setPhaseText(msg)
+      },
+      onEnd: () => {
+        setListening(false)
+        stopListenRef.current = null
+        setPhase((p) => (p === 'listening' ? 'idle' : p))
+      },
+    })
   }
 
+  const sendMessage = async (text?: string) => {
+    const question = (text ?? input).trim()
+    if (!question) return
+    setInput('')
+    setTranscript('')
+    addMessage('user', question)
+    setPhase('processing')
+    setPhaseText('Interpretando…')
+    stopSpeaking()
+
+    try {
+      // contexto para o agente
+      const data = {
+        sheets: sheets.map((s: Sheet) => ({
+          name: s.name,
+          columns: s.columns.map((c) => c.name),
+          rowCount: s.rows.length,
+        })),
+        dashboard: state.dashboard.widgets.map((w) => ({ title: w.title, kind: w.kind })),
+      }
+      const res = await askAgent(question, data)
+      const reply = res.reply || 'Entendi.'
+      const action = res.action || null
+      const params = res.params || {}
+
+      // executa a ação real
+      if (action) {
+        setPhase('executing')
+        setPhaseText('Executando…')
+        const ctx = buildAgentContext(
+          sheets,
+          (s: Sheet[]) => dispatch({ type: 'SET_SHEETS', sheets: s }),
+          activeIndex,
+          (i: number) => dispatch({ type: 'SET_ACTIVE_SHEET', index: i }),
+          state.dashboard,
+          (d) => dispatch({ type: 'SET_DASHBOARD', dashboard: d }),
+        )
+        const result = applyAgentAction(ctx, action, params)
+        const finalReply = result ? `${reply} ${result}` : reply
+        addMessage('assistant', finalReply)
+        setLastReply(finalReply)
+        setPhase('done')
+        setPhaseText('Ação concluída')
+        speak(finalReply)
+        // força regeração do dashboard se nova aba foi criada
+        if (action === 'create_sheet') {
+          const idx = ctx.sheets.length - 1
+          dispatch({ type: 'SET_ACTIVE_SHEET', index: idx })
+        }
+        if (action === 'create_chart') {
+          // gráfico criado — assegura que está no dashboard visível
+          dispatch({ type: 'SET_MODE', mode: 'dashboard' })
+        }
+      } else {
+        addMessage('assistant', reply)
+        setLastReply(reply)
+        setPhase('done')
+        setPhaseText('Respondido')
+        speak(reply)
+      }
+    } catch (err) {
+      setPhase('error')
+      setPhaseText(err instanceof Error ? err.message : 'Não consegui processar. Tente novamente.')
+      addMessage(
+        'assistant',
+        'Desculpe, tive um problema ao processar. Tente novamente em instantes.',
+      )
+    }
+  }
+
+  const replayLast = () => {
+    if (lastReply) speak(lastReply)
+  }
+
+  if (!open) return null
+
   return (
-    <div
-      className={`fixed inset-y-0 right-0 z-50 flex w-full max-w-md flex-col bg-background shadow-2xl transition-transform duration-300 ${
-        agentOpen ? 'translate-x-0' : 'translate-x-full'
-      }`}
-    >
+    <div className="fixed inset-y-0 right-0 z-40 flex w-full max-w-md flex-col border-l border-border bg-background shadow-2xl animate-fade-in">
       {/* Header */}
-      <div className="flex items-center justify-between border-b border-border bg-card px-4 py-3">
-        <div className="flex items-center gap-2">
-          <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-primary/10 text-primary">
-            <Bot className="h-5 w-5" />
-          </div>
-          <div>
-            <p className="text-sm font-semibold text-foreground">Agente HARMOZA</p>
-            <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
-              <span
-                className={`h-1.5 w-1.5 rounded-full ${agentStatus === 'listening' ? 'animate-pulse-soft bg-red-500' : 'bg-emerald-500'}`}
-              />
-              {statusLabel[agentStatus] ?? 'Pronto'}
-            </p>
+      <div className="flex items-center gap-2 border-b border-border bg-primary px-4 py-3 text-primary-foreground">
+        <Sparkles className="h-5 w-5 text-[#D97706]" />
+        <div className="flex-1">
+          <div className="text-sm font-bold">Agente HARMOZA</div>
+          <div className="text-[11px] text-primary-foreground/70">
+            Assistente de dados · voz e texto
           </div>
         </div>
-        <div className="flex items-center gap-1">
-          <Button
-            variant="ghost"
-            size="icon"
-            className="h-8 w-8"
-            onClick={clearAgent}
-            title="Limpar conversa"
-          >
-            <Sparkles className="h-4 w-4" />
-          </Button>
-          <Button
-            variant="ghost"
-            size="icon"
-            className="h-8 w-8"
-            onClick={() => setAgentOpen(false)}
-            title="Fechar"
-          >
-            <X className="h-4 w-4" />
-          </Button>
-        </div>
+        <Button
+          variant="ghost"
+          size="icon"
+          onClick={onClose}
+          className="text-primary-foreground hover:bg-primary/80"
+        >
+          <X className="h-5 w-5" />
+        </Button>
       </div>
 
-      {/* Messages */}
-      <ScrollArea className="flex-1" ref={scrollRef as never}>
-        <div className="flex flex-col gap-3 p-4">
-          {agentMessages.length === 0 && (
-            <div className="mt-8 text-center">
-              <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-primary/10 text-primary">
-                <Bot className="h-7 w-7" />
-              </div>
-              <p className="mt-3 font-medium text-foreground">Olá! Sou o agente da HARMOZA 👋</p>
-              <p className="mx-auto mt-1 max-w-xs text-sm text-muted-foreground">
-                Posso consultar seus dados, criar gráficos e gerenciar o dashboard. Fale ou digite:
-              </p>
-              <div className="mx-auto mt-4 flex max-w-xs flex-col gap-1.5 text-left">
-                {[
-                  'Qual foi o total de vendas?',
-                  'Mostre as vendas por mês',
-                  'Crie um gráfico de vendas por região',
-                  'Qual região tem o melhor resultado?',
-                ].map((s) => (
-                  <button
-                    key={s}
-                    className="rounded-lg border border-border bg-card px-3 py-2 text-left text-xs text-muted-foreground transition-colors hover:border-primary/40 hover:text-foreground"
-                    onClick={() => send(s)}
-                  >
-                    “{s}”
-                  </button>
-                ))}
-              </div>
-            </div>
+      {/* Fase ativa */}
+      {phase !== 'idle' && phase !== 'done' && (
+        <div
+          className={cn(
+            'flex items-center gap-2 border-b px-4 py-2 text-sm',
+            phase === 'error'
+              ? 'border-red-200 bg-red-50 text-red-700'
+              : 'border-primary/10 bg-primary/5 text-primary',
           )}
+        >
+          {phase === 'listening' && (
+            <>
+              <span className="relative flex h-2.5 w-2.5">
+                <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-red-400 opacity-75" />
+                <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-red-500" />
+              </span>
+              Ouvindo… fale agora
+            </>
+          )}
+          {phase === 'transcribing' && <Loader2 className="h-4 w-4 animate-spin" />}
+          {phase === 'processing' && <Loader2 className="h-4 w-4 animate-spin" />}
+          {phase === 'executing' && <Loader2 className="h-4 w-4 animate-spin" />}
+          {phase === 'error' && <AlertTriangle className="h-4 w-4" />}
+          <span className="font-medium">{phaseText || phase}</span>
+        </div>
+      )}
 
-          {agentMessages.map((m) => (
+      {/* Transcrição do áudio */}
+      {transcript && (
+        <div className="border-b border-border bg-muted/40 px-4 py-2 text-sm italic text-muted-foreground">
+          🎤 “{transcript}”
+        </div>
+      )}
+
+      {/* Histórico */}
+      <div className="flex-1 space-y-3 overflow-y-auto p-4 harmoza-scroll">
+        {state.agentHistory.length === 0 ? (
+          <div className="mt-8 text-center text-sm text-muted-foreground">
+            <Sparkles className="mx-auto mb-2 h-8 w-8 text-primary/40" />
+            <p className="font-medium text-foreground">Pergunte sobre seus dados</p>
+            <p className="mt-1 text-xs">
+              Ex.: “Qual o total de vendas?”, “Crie um gráfico de vendas por região”, “Adicione um
+              indicador de ticket médio”, “Remova o gráfico de pizza”.
+            </p>
+          </div>
+        ) : (
+          state.agentHistory.map((m) => (
             <div
               key={m.id}
-              className={`flex ${m.role === 'user' ? 'justify-end' : 'justify-start'}`}
+              className={cn('flex', m.role === 'user' ? 'justify-end' : 'justify-start')}
             >
               <div
-                className={`flex max-w-[85%] gap-2 ${m.role === 'user' ? 'flex-row-reverse' : ''}`}
+                className={cn(
+                  'max-w-[85%] rounded-2xl px-3.5 py-2.5 text-sm leading-relaxed',
+                  m.role === 'user'
+                    ? 'rounded-br-sm bg-primary text-primary-foreground'
+                    : 'rounded-bl-sm border border-border bg-card text-foreground',
+                )}
               >
-                <div
-                  className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-full ${
-                    m.role === 'user'
-                      ? 'bg-primary text-primary-foreground'
-                      : 'bg-harmoza-teal/15 text-harmoza-teal'
-                  }`}
-                >
-                  {m.role === 'user' ? (
-                    <User className="h-3.5 w-3.5" />
-                  ) : (
-                    <Bot className="h-3.5 w-3.5" />
-                  )}
-                </div>
-                <div
-                  className={`rounded-2xl px-3.5 py-2.5 text-sm ${
-                    m.role === 'user'
-                      ? 'rounded-tr-sm bg-primary text-primary-foreground'
-                      : 'rounded-tl-sm border border-border bg-card text-foreground'
-                  }`}
-                >
-                  <p className="whitespace-pre-wrap leading-relaxed">{m.content}</p>
-                  {m.role === 'assistant' && (
-                    <div className="mt-2 flex items-center gap-2">
-                      <button
-                        className="flex items-center gap-1 text-[11px] text-muted-foreground transition-colors hover:text-foreground"
-                        onClick={() => replay(m.content)}
-                      >
-                        <Volume2 className={`h-3.5 w-3.5 ${speaking ? 'text-harmoza-teal' : ''}`} />
-                        {speaking ? 'Ouvindo…' : 'Ouvir de novo'}
-                      </button>
-                    </div>
-                  )}
-                </div>
+                {m.content}
               </div>
             </div>
-          ))}
-
-          {interim && (
-            <div className="flex justify-end">
-              <div className="rounded-2xl rounded-tr-sm border border-dashed border-primary/40 bg-primary/5 px-3.5 py-2.5 text-sm text-muted-foreground italic">
-                {interim}…
-              </div>
-            </div>
-          )}
-
-          {(agentStatus === 'processing' || agentStatus === 'executing') && (
-            <div className="flex items-center gap-2 text-xs text-muted-foreground">
-              <Loader2 className="h-3.5 w-3.5 animate-spin" />
-              {agentStatus === 'executing'
-                ? 'Executando ação no dashboard…'
-                : 'Analisando seus dados…'}
-            </div>
-          )}
-        </div>
-      </ScrollArea>
+          ))
+        )}
+        <div ref={messagesEndRef} />
+      </div>
 
       {/* Input */}
       <div className="border-t border-border bg-card p-3">
-        <div className="flex items-center gap-2">
-          <Button
-            variant={listening ? 'destructive' : 'outline'}
-            size="icon"
-            className="h-10 w-10 shrink-0"
-            onClick={listening ? stopListening : startListening}
-            title={listening ? 'Parar gravação' : 'Falar com o agente'}
-          >
-            {listening ? <Square className="h-4 w-4" /> : <Mic className="h-4 w-4" />}
-          </Button>
-          <Input
-            value={text}
-            onChange={(e) => setText(e.target.value)}
-            onKeyDown={(e) => e.key === 'Enter' && send()}
-            placeholder={listening ? 'Fale agora…' : 'Pergunte ou dê um comando…'}
-            className="h-10"
+        <div className="flex items-end gap-2">
+          <Textarea
+            value={input}
+            onChange={(e) => setInput(e.target.value)}
+            placeholder="Digite um comando…"
+            className="min-h-[44px] max-h-28 flex-1 resize-none"
+            rows={1}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' && !e.shiftKey) {
+                e.preventDefault()
+                sendMessage()
+              }
+            }}
           />
           <Button
-            className="h-10 w-10 shrink-0"
+            variant={listening ? 'destructive' : 'default'}
             size="icon"
-            onClick={() => send()}
-            disabled={!text.trim() || agentStatus === 'processing' || agentStatus === 'executing'}
+            onClick={handleListen}
+            className={cn('h-11 w-11 shrink-0', listening && 'animate-pulse')}
+            title={listening ? 'Parar gravação' : 'Falar'}
           >
-            <Send className="h-4 w-4" />
+            {listening ? <MicOff className="h-5 w-5" /> : <Mic className="h-5 w-5" />}
+          </Button>
+          <Button
+            size="icon"
+            className="h-11 w-11 shrink-0"
+            onClick={() => sendMessage()}
+            disabled={!input.trim() || phase === 'processing'}
+          >
+            <Send className="h-5 w-5" />
           </Button>
         </div>
-        <p className="mt-2 text-center text-[11px] text-muted-foreground">
-          Reconhecimento e síntese de voz usam os recursos do seu navegador.
-        </p>
+        <div className="mt-2 flex items-center justify-between">
+          <div className="flex gap-1.5">
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-7 px-2 text-[11px] text-muted-foreground"
+              onClick={() => sendMessage('Crie um gráfico de vendas por região')}
+            >
+              Gráfico por região
+            </Button>
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-7 px-2 text-[11px] text-muted-foreground"
+              onClick={() => sendMessage('Adicione um indicador de ticket médio')}
+            >
+              + Ticket médio
+            </Button>
+          </div>
+          {lastReply && (
+            <Button variant="ghost" size="sm" className="h-7 px-2 text-[11px]" onClick={replayLast}>
+              <Volume2 className="h-3.5 w-3.5" /> Ouvir de novo
+            </Button>
+          )}
+        </div>
       </div>
     </div>
-  )
-}
-
-export function AgentFab() {
-  const { setAgentOpen, agentStatus } = useHarmoza()
-  const busy =
-    agentStatus === 'processing' || agentStatus === 'executing' || agentStatus === 'listening'
-  return (
-    <Button
-      className="fixed bottom-6 right-6 z-40 h-14 w-14 rounded-full shadow-elevation"
-      size="icon"
-      onClick={() => setAgentOpen(true)}
-      title="Abrir agente de IA"
-    >
-      {busy ? <Loader2 className="h-6 w-6 animate-spin" /> : <Bot className="h-6 w-6" />}
-    </Button>
   )
 }

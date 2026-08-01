@@ -132,17 +132,6 @@ export function HarmozaProvider({ children }: { children: ReactNode }) {
   const lastWorkbookRef = useRef<Workbook | null>(workbook)
   lastWorkbookRef.current = workbook
 
-  useEffect(() => {
-    fetchRemoteWorkbooks()
-  }, [fetchRemoteWorkbooks])
-
-  useEffect(() => {
-    localStorage.setItem(
-      LS_KEY,
-      JSON.stringify({ workbooks, activeWorkbookId, view, components, layout }),
-    )
-  }, [workbooks, activeWorkbookId, view, components, layout])
-
   const activeSheet = useMemo(() => {
     if (!workbook) return null
     return (
@@ -252,40 +241,16 @@ export function HarmozaProvider({ children }: { children: ReactNode }) {
     setAgentOpen(false)
   }, [])
 
-  const fetchRemoteWorkbooks = useCallback(async () => {
-    if (!pb.authStore.isValid || !pb.authStore.record?.id) return
-    try {
-      const records = await pb.collection('workbooks').getFullList({
-        filter: 'source != ""',
-        sort: '-created',
-      })
-      const remoteWbs: Workbook[] = records.map((r: any) => {
-        const raw = typeof r.rawJson === 'string' ? JSON.parse(r.rawJson) : r.rawJson
-        const sheets = (raw?.sheets || []).map((s: any, i: number) => ({
-          id: s.id || `sheet-${i}-${Math.random().toString(36).slice(2, 7)}`,
-          name: s.name || `Sheet ${i + 1}`,
-          columns: s.columns || [],
-          rows: s.rows || [],
-        }))
-        return {
-          id: r.id,
-          fileName: r.fileName || raw?.fileName || r.name,
-          sheets,
-          activeSheetId: sheets[0]?.id || '',
-          source: r.source || undefined,
-        } as Workbook
-      })
-      setWorkbooks((prev) => {
-        const remoteMap = new Map(remoteWbs.map((w) => [w.id, w]))
-        const updated = prev.map((w) => (remoteMap.has(w.id) ? remoteMap.get(w.id)! : w))
-        const existingIds = new Set(prev.map((w) => w.id))
-        const newOnes = remoteWbs.filter((w) => !existingIds.has(w.id))
-        return [...updated, ...newOnes]
-      })
-    } catch (e) {
-      console.warn('Could not fetch remote workbooks:', e)
-    }
+  useEffect(() => {
+    fetchRemoteWorkbooks()
   }, [])
+
+  useEffect(() => {
+    localStorage.setItem(
+      LS_KEY,
+      JSON.stringify({ workbooks, activeWorkbookId, view, components, layout }),
+    )
+  }, [workbooks, activeWorkbookId, view, components, layout])
 
   const setActiveSheet = useCallback(
     (id: string) => {

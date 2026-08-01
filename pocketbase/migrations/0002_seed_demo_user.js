@@ -1,13 +1,15 @@
 // 0002_seed_demo_user.js — HARMOZA
-// Cria a conta de demonstração (visível no login) e uma collection base
-// "ai_context" para o agente do Skip ter ferramentas/contexto.
+// Garante a conta de demonstração (visível no login) e a collection base
+// "ai_context" (contexto/ferramenta do agente do Skip).
 migrate(
   (app) => {
-    // ---- Usuário demo ----
+    // ---- Usuário demo (idempotente) ----
     const users = app.findCollectionByNameOrId('_pb_users_auth_')
+    let demo = null
     try {
-      app.findAuthRecordByEmail('_pb_users_auth_', 'demo@harmoza.com.br')
-    } catch (_) {
+      demo = app.findAuthRecordByEmail('_pb_users_auth_', 'demo@harmoza.com.br')
+    } catch (_) {}
+    if (!demo) {
       const record = new Record(users)
       record.setEmail('demo@harmoza.com.br')
       record.setPassword('demo1234') // 8+ chars
@@ -16,10 +18,12 @@ migrate(
       app.save(record)
     }
 
-    // ---- Collection base "ai_context" (ferramenta/contexto do agente) ----
+    // ---- Collection "ai_context" (idempotente) ----
+    let aiCol = null
     try {
-      app.findCollectionByNameOrId('ai_context')
-    } catch (_) {
+      aiCol = app.findCollectionByNameOrId('ai_context')
+    } catch (_) {}
+    if (!aiCol) {
       const collection = new Collection({
         name: 'ai_context',
         type: 'base',

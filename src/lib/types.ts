@@ -72,13 +72,7 @@ export interface ChatMessage {
   createdAt: number
 }
 
-export type AgentState =
-  | 'idle'
-  | 'listening'
-  | 'processing'
-  | 'executing'
-  | 'done'
-  | 'error'
+export type AgentState = 'idle' | 'listening' | 'processing' | 'executing' | 'done' | 'error'
 
 export interface AgentResult {
   action: string

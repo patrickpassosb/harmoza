@@ -1,4 +1,4 @@
-/* HARMOZA — App: rotas e providers */
+/* HARMOZA — App: rotas (arquitetura própria, auto-contida) */
 import { BrowserRouter, Routes, Route } from 'react-router-dom'
 import { Toaster } from '@/components/ui/toaster'
 import { Toaster as Sonner } from '@/components/ui/sonner'

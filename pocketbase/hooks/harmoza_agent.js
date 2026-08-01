@@ -1,114 +1,84 @@
-// harmoza_agent.js — HARMOZA
+// HARMOZA — Agente de IA
 // POST /backend/v1/harmoza/agent
-// Recebe { messages, dataSummary, dashboardSummary } e devolve
-// { action, params, reply } via $ai.chat (JSON estruturado).
-// O app EXECUTA a ação real no estado; o hook só decide o que fazer.
+// Recebe: { messages, dataSummary, dashboardSummary } (AppShell)
+// Devolve: { reply, action, params } — ações compatíveis com AppShell:
+//   add_chart | remove_component | move_component | add_kpi | create_sheet | filter | answer
 routerAdd(
   'POST',
   '/backend/v1/harmoza/agent',
   (e) => {
     const body = e.requestInfo().body || {}
-    const messages = body.messages || []
-    const dataSummary = body.dataSummary || ''
-    const dashboardSummary = body.dashboardSummary || ''
-
-    if (!Array.isArray(messages) || messages.length === 0) {
-      return e.json(400, { error: 'messages é obrigatório' })
-    }
+    const messages = Array.isArray(body.messages) ? body.messages : []
+    const lastUser = [...messages].reverse().find((m) => m && m.role === 'user')
+    const question = (lastUser && lastUser.content ? String(lastUser.content) : '').trim()
+    const dataSummary = String(body.dataSummary || '')
+    const dashSummary = String(body.dashboardSummary || '')
+    if (!question) return e.badRequestError('missing question')
 
     const system = [
-      'Você é o agente de IA da HARMOZA, um assistente de gestão para pequenas e médias empresas que usam Excel.',
-      'Você ajuda o usuário a entender os dados da planilha importada e a modificar o dashboard.',
-      '',
-      'CONTEXTO DOS DADOS (resumo calculado no navegador, com valores reais):',
-      dataSummary || '(nenhum dado importado ainda)',
-      '',
-      'CONTEXTO DO DASHBOARD ATUAL:',
-      dashboardSummary || '(dashboard vazio)',
-      '',
-      'REGRAS:',
-      '- Responda SEMPRE em português (pt-BR), tom profissional e direto, sem gírias.',
-      '- Responda APENAS com um JSON válido, sem texto fora, sem markdown. Formato exato:',
-      '  {"action": "<acao>", "params": { ... }, "reply": "<sua resposta curta em pt-BR>"}',
-      '- action deve ser UMA destas (escolha a mais adequada ao pedido):',
-      '  "answer"       -> pergunta sobre os dados (responda na reply com números reais do contexto)',
-      '  "add_chart"    -> criar um gráfico novo. params: {title, chartType ("bar"|"line"|"pie"|"table"|"ranking"|"kpi"), columnX, columnY?, size ("small"|"medium"|"large")}',
-      '  "remove_component" -> remover um componente. params: {title} (título aproximado do componente)',
-      '  "move_component"   -> mover um componente. params: {title, position ("top"|"bottom"|"left"|"right")}',
-      '  "add_kpi"      -> adicionar um card KPI. params: {title, column, aggregation ("sum"|"avg"|"count"), format ("currency"|"number"|"percent"|"date")}',
-      '  "create_sheet" -> criar uma nova aba. params: {name}',
-      '  "filter"       -> aplicar filtro de período. params: {period ("all"|"last3"|"last6"|"last12"|"month")}',
-      '- "answer" é para perguntas (ex.: "qual o total de vendas?"). Use números do contexto, NÃO invente.',
-      '- Para pedidos de criar gráfico/aba/KPI ou remover/mover, escolha a action correspondente e preencha params.',
-      '- Se o comando for ambíguo, use action "answer" e peça UMA única informação adicional na reply.',
-      '- reply deve ser curta (máx. ~2 frases) e citar números reais quando for pergunta.',
+      'Você é o agente da HARMOZA, plataforma que transforma planilhas Excel de PMEs em dashboards inteligentes.',
+      'Você recebe um resumo dos dados da planilha e do dashboard atual do usuário.',
+      'Responda SEMPRE em português (Brasil), curto e direto, em tom profissional.',
+      'Se o usuário pedir uma AÇÃO, responda SOMENTE com JSON: { "reply": "confirmação curta", "action": "tipo", "params": {...} }.',
+      'Ações válidas e seus params:',
+      '- add_chart: { "title", "chartType": "bar|line|pie|area|ranking|table", "columnX", "columnY", "size": "small|medium|large" }',
+      '- remove_component: { "title" }',
+      '- move_component: { "title", "position": "top|bottom" }',
+      '- add_kpi: { "title", "column", "aggregation": "sum|avg|count", "format": "currency|number" }',
+      '- create_sheet: { "name" }',
+      '- filter: {} (filtro de período)',
+      '- answer: {} (apenas resposta, sem ação)',
+      'Para PERGUNTAS sobre os dados, responda { "reply": "...", "action": "answer", "params": {} }.',
+      'NUNCA invente números: use apenas os dados fornecidos no resumo.',
+      'Se o pedido for ambíguo, peça UMA única informação adicional.',
     ].join('\n')
 
-    let result
+    const user = [
+      'Histórico recente:',
+      JSON.stringify(messages.slice(-6)),
+      '',
+      'Resumo dos dados da planilha:',
+      dataSummary || '- nenhum dado',
+      '',
+      'Dashboard atual:',
+      dashSummary || '- vazio',
+    ].join('\n')
+
     try {
-      result = $ai.chat({
+      const res = $ai.chat({
         model: 'fast',
         messages: [
           { role: 'system', content: system },
-          ...messages.map((m) => ({
-            role: m.role === 'user' ? 'user' : 'assistant',
-            content: typeof m.content === 'string' ? m.content : '',
-          })),
+          { role: 'user', content: user },
         ],
         temperature: 0.2,
       })
+      const raw =
+        (res.choices &&
+          res.choices[0] &&
+          res.choices[0].message &&
+          res.choices[0].message.content) ||
+        ''
+      let parsed = null
+      try {
+        parsed = JSON.parse(raw)
+      } catch (_) {
+        parsed = { reply: raw, action: 'answer', params: {} }
+      }
+      const action = parsed.action || 'answer'
+      return e.json(200, {
+        reply: parsed.reply || raw,
+        action,
+        params: parsed.params || {},
+      })
     } catch (err) {
-      $app
-        .logger()
-        .error(
-          'harmoza agent $ai.chat failed',
-          'error',
-          String(err && err.message ? err.message : err),
-        )
-      return e.json(502, { error: 'Não consegui processar o pedido agora. Tente novamente.' })
-    }
-
-    const content =
-      result && result.choices && result.choices[0] && result.choices[0].message
-        ? result.choices[0].message.content
-        : ''
-    if (!content) {
-      return e.json(502, { error: 'Resposta vazia do modelo.' })
-    }
-
-    // Extrai o JSON (tolerando crases/markdown acidental)
-    let cleaned = content.trim()
-    if (cleaned.startsWith('```')) {
-      cleaned = cleaned
-        .replace(/^```[a-zA-Z]*\n?/, '')
-        .replace(/```$/, '')
-        .trim()
-    }
-    const start = cleaned.indexOf('{')
-    const end = cleaned.lastIndexOf('}')
-    if (start < 0 || end < start) {
       return e.json(200, {
+        reply: 'Desculpe, não consegui processar agora. Tente de novo em instantes.',
         action: 'answer',
         params: {},
-        reply: 'Não entendi o comando. Pode reformular?',
+        error: err && err.message ? String(err.message) : 'unknown',
       })
     }
-    let parsed
-    try {
-      parsed = JSON.parse(cleaned.slice(start, end + 1))
-    } catch (_) {
-      return e.json(200, {
-        action: 'answer',
-        params: {},
-        reply: 'Não entendi o comando. Pode reformular?',
-      })
-    }
-
-    const action = typeof parsed.action === 'string' ? parsed.action : 'answer'
-    const params = parsed.params && typeof parsed.params === 'object' ? parsed.params : {}
-    const reply = typeof parsed.reply === 'string' && parsed.reply.trim() ? parsed.reply : 'Pronto!'
-
-    return e.json(200, { action, params, reply })
   },
   $apis.requireAuth(),
 )

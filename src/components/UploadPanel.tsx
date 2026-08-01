@@ -1,51 +1,52 @@
-/* HARMOZA — Importação de planilha Excel
-   Upload drag-and-drop (.xlsx), preview de abas/colunas/tipos, botão demo.
-   O arquivo é lido no navegador (SheetJS) — não sai da máquina. */
-
 import { useCallback, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { UploadCloud, FileSpreadsheet, Loader2, Sparkles, X, CheckCircle2 } from 'lucide-react'
+import { UploadCloud, Loader2, Sparkles, X, CheckCircle2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { useHarmoza } from '@/lib/store'
+import { isSupportedFile, SUPPORTED_EXTENSIONS } from '@/lib/fileParser'
 import { cn } from '@/lib/utils'
 
 type UploadStatus = 'idle' | 'loading' | 'success' | 'error'
 
-interface UploadPanelProps {
-  onImported?: (sheets: unknown[], fileName: string) => void
-  onLoadDemo?: () => Promise<void>
-  demoLoading?: boolean
-  onSuccessClose?: () => void
-}
-
-export function UploadPanel({ onSuccessClose }: UploadPanelProps) {
+export function UploadPanel({ onSuccessClose }: { onSuccessClose?: () => void }) {
   const { importFile, loadDemo, setView } = useHarmoza()
   const [dragOver, setDragOver] = useState(false)
   const [status, setStatus] = useState<UploadStatus>('idle')
   const [error, setError] = useState('')
-  const [fileName, setFileName] = useState('')
+  const [successText, setSuccessText] = useState('')
   const inputRef = useRef<HTMLInputElement>(null)
   const navigate = useNavigate()
 
-  const handleFile = useCallback(
-    async (file: File) => {
-      if (!/\.xlsx?$/i.test(file.name)) {
+  const handleFiles = useCallback(
+    async (files: File[]) => {
+      if (!files.length) return
+      const unsupported = files.filter((f) => !isSupportedFile(f.name))
+      const supported = files.filter((f) => isSupportedFile(f.name))
+
+      if (unsupported.length > 0) {
+        const names = unsupported.map((f) => f.name).join(', ')
         setStatus('error')
-        setError('Formato não suportado. Envie um arquivo .xlsx (Excel).')
-        return
+        setError(`Formato não suportado: ${names}. Use ${SUPPORTED_EXTENSIONS}.`)
+        if (!supported.length) return
       }
+
       setStatus('loading')
       setError('')
-      setFileName(file.name)
+      setSuccessText('')
       try {
-        await importFile(file)
+        await importFile(supported)
         setStatus('success')
+        setSuccessText(
+          supported.length === 1
+            ? `${supported[0].name} importada com sucesso!`
+            : `${supported.length} arquivos importados com sucesso!`,
+        )
         setView('sheet')
         navigate('/')
         if (onSuccessClose) onSuccessClose()
       } catch (err) {
         setStatus('error')
-        setError(err instanceof Error ? err.message : 'Não foi possível processar o arquivo.')
+        setError(err instanceof Error ? err.message : 'Não foi possível processar os arquivos.')
       }
     },
     [importFile, setView, navigate, onSuccessClose],
@@ -55,19 +56,20 @@ export function UploadPanel({ onSuccessClose }: UploadPanelProps) {
     (e: React.DragEvent) => {
       e.preventDefault()
       setDragOver(false)
-      const file = e.dataTransfer.files?.[0]
-      if (file) handleFile(file)
+      const files = Array.from(e.dataTransfer.files)
+      if (files.length) handleFiles(files)
     },
-    [handleFile],
+    [handleFiles],
   )
 
   const handleDemo = async () => {
     setStatus('loading')
     setError('')
-    setFileName('demonstracao_harmoza.xlsx')
+    setSuccessText('')
     try {
       await loadDemo()
       setStatus('success')
+      setSuccessText('demonstracao_harmoza.xlsx')
       setView('sheet')
       navigate('/')
       if (onSuccessClose) onSuccessClose()
@@ -82,8 +84,8 @@ export function UploadPanel({ onSuccessClose }: UploadPanelProps) {
       <div className="mb-6">
         <h2 className="text-2xl font-bold tracking-tight text-foreground">Importe sua planilha</h2>
         <p className="mt-1 text-muted-foreground">
-          Envie um arquivo Excel (.xlsx) e a HARMOZA transforma seus dados em um dashboard
-          inteligente.
+          Envie arquivos Excel, CSV ou outros formatos e a HARMOZA transforma seus dados em um
+          dashboard inteligente.
         </p>
       </div>
 
@@ -109,20 +111,24 @@ export function UploadPanel({ onSuccessClose }: UploadPanelProps) {
         )}
         <p className="text-base font-medium text-foreground">
           {status === 'loading'
-            ? 'Processando arquivo…'
-            : 'Arraste seu arquivo ou clique para selecionar'}
+            ? 'Processando arquivos…'
+            : 'Arraste seus arquivos ou clique para selecionar'}
         </p>
         <p className="mt-1 text-sm text-muted-foreground">
-          Somente arquivos .xlsx · processado localmente
+          {SUPPORTED_EXTENSIONS} · processado localmente
+        </p>
+        <p className="mt-0.5 text-xs text-muted-foreground">
+          Vários arquivos suportados · máx 5 MB por arquivo · máx 10.000 linhas por aba
         </p>
         <input
           ref={inputRef}
           type="file"
-          accept=".xlsx,.xls"
+          accept=".csv,.xlsx,.xls,.ods,.tsv,.txt"
+          multiple
           className="hidden"
           onChange={(e) => {
-            const f = e.target.files?.[0]
-            if (f) handleFile(f)
+            const files = Array.from(e.target.files || [])
+            if (files.length) handleFiles(files)
             e.target.value = ''
           }}
         />
@@ -150,10 +156,10 @@ export function UploadPanel({ onSuccessClose }: UploadPanelProps) {
         Carregar planilha de demonstração
       </Button>
 
-      {status === 'success' && fileName && (
+      {status === 'success' && successText && (
         <div className="mt-4 rounded-xl border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-800">
           <div className="flex items-center gap-2 font-medium">
-            <CheckCircle2 className="h-4 w-4" /> {fileName} importada com sucesso!
+            <CheckCircle2 className="h-4 w-4" /> {successText}
           </div>
         </div>
       )}
@@ -161,7 +167,7 @@ export function UploadPanel({ onSuccessClose }: UploadPanelProps) {
       {status === 'error' && error && (
         <div className="mt-4 flex items-start gap-2 rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-700">
           <X className="mt-0.5 h-4 w-4 shrink-0" />
-          <span>{error}</span>
+          <span className="whitespace-pre-line">{error}</span>
         </div>
       )}
     </div>

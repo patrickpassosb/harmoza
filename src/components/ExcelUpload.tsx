@@ -1,11 +1,11 @@
-// HARMOZA — área de upload de planilha (.xlsx) com estado
 import { useCallback, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { UploadCloud, Loader2, FileSpreadsheet, AlertTriangle, CheckCircle2 } from 'lucide-react'
 import { useHarmoza } from '@/lib/store'
+import { isSupportedFile, SUPPORTED_EXTENSIONS } from '@/lib/fileParser'
 
 interface Props {
-  onLoaded?: (wb: { fileName: string; sheets: import('@/lib/types').SheetData[] }) => void
+  onLoaded?: (files: File[]) => void
   onDemo?: () => void
   loading?: boolean
   error?: string | null
@@ -14,7 +14,6 @@ interface Props {
 }
 
 export function ExcelUpload({
-  onLoaded,
   onDemo,
   loading = false,
   error = null,
@@ -23,29 +22,39 @@ export function ExcelUpload({
 }: Props) {
   const { importFile, loadDemo, setView } = useHarmoza()
   const [dragOver, setDragOver] = useState(false)
-  const [successName, setSuccessName] = useState<string | null>(null)
+  const [successMsg, setSuccessMsg] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
   const inputRef = useRef<HTMLInputElement>(null)
   const navigate = useNavigate()
 
   const handleFiles = useCallback(
-    async (file?: File) => {
-      if (!file) return
-      if (!/\.xlsx?$/i.test(file.name)) {
+    async (files: File[]) => {
+      if (!files.length) return
+      const unsupported = files.filter((f) => !isSupportedFile(f.name))
+      const supported = files.filter((f) => isSupportedFile(f.name))
+
+      if (unsupported.length > 0) {
         if (onDismissError) onDismissError()
-        alert('Formato não suportado. Envie um arquivo .xlsx (Excel).')
-        return
+        const names = unsupported.map((f) => f.name).join(', ')
+        alert(`Formato não suportado: ${names}\nFormatos aceitos: ${SUPPORTED_EXTENSIONS}`)
       }
+
+      if (!supported.length) return
+
       setBusy(true)
       try {
-        await importFile(file)
-        setSuccessName(file.name)
+        await importFile(supported)
+        setSuccessMsg(
+          supported.length === 1
+            ? `${supported[0].name} importada com sucesso!`
+            : `${supported.length} arquivos importados com sucesso!`,
+        )
         setView('sheet')
         navigate('/')
         if (onSuccessClose) onSuccessClose()
       } catch (err) {
         if (onDismissError) onDismissError()
-        alert(err instanceof Error ? err.message : 'Não foi possível processar o arquivo.')
+        alert(err instanceof Error ? err.message : 'Não foi possível processar os arquivos.')
       } finally {
         setBusy(false)
       }
@@ -61,7 +70,7 @@ export function ExcelUpload({
     setBusy(true)
     try {
       await loadDemo()
-      setSuccessName('demonstracao_harmoza.xlsx')
+      setSuccessMsg('demonstracao_harmoza.xlsx')
       setView('sheet')
       navigate('/')
       if (onSuccessClose) onSuccessClose()
@@ -81,7 +90,8 @@ export function ExcelUpload({
         onDrop={(e) => {
           e.preventDefault()
           setDragOver(false)
-          handleFiles(e.dataTransfer.files?.[0])
+          const files = Array.from(e.dataTransfer.files)
+          if (files.length) handleFiles(files)
         }}
         onClick={() => inputRef.current?.click()}
         className={`flex cursor-pointer flex-col items-center justify-center rounded-2xl border-2 border-dashed px-6 py-14 text-center transition-all ${
@@ -97,19 +107,24 @@ export function ExcelUpload({
         )}
         <p className="text-base font-medium text-[#172554]">
           {busy || loading
-            ? 'Processando arquivo…'
-            : 'Arraste seu arquivo ou clique para selecionar'}
+            ? 'Processando arquivos…'
+            : 'Arraste seus arquivos ou clique para selecionar'}
         </p>
         <p className="mt-1 text-sm text-muted-foreground">
-          Somente arquivos .xlsx · processado localmente
+          {SUPPORTED_EXTENSIONS} · processado localmente
+        </p>
+        <p className="mt-0.5 text-xs text-muted-foreground">
+          Você pode selecionar vários arquivos · máx 5 MB por arquivo · máx 10.000 linhas por aba
         </p>
         <input
           ref={inputRef}
           type="file"
-          accept=".xlsx,.xls"
+          accept=".csv,.xlsx,.xls,.ods,.tsv,.txt"
+          multiple
           className="hidden"
           onChange={(e) => {
-            handleFiles(e.target.files?.[0])
+            const files = Array.from(e.target.files || [])
+            if (files.length) handleFiles(files)
             e.target.value = ''
           }}
         />
@@ -132,17 +147,17 @@ export function ExcelUpload({
         Carregar planilha de demonstração
       </button>
 
-      {successName && (
+      {successMsg && (
         <div className="mt-4 flex items-center gap-2 rounded-xl border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-700">
           <CheckCircle2 className="h-4 w-4 shrink-0" />
-          <span>{successName} importada com sucesso!</span>
+          <span>{successMsg}</span>
         </div>
       )}
 
       {error && (
         <div className="mt-4 flex items-start gap-2 rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-700">
           <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
-          <span className="flex-1">{error}</span>
+          <span className="flex-1 whitespace-pre-line">{error}</span>
           {onDismissError && (
             <button onClick={onDismissError} className="text-red-500 hover:text-red-700">
               ✕

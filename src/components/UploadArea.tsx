@@ -4,6 +4,11 @@ import { useCallback, useRef, useState } from 'react'
 import { UploadCloud, FileSpreadsheet, Loader2, X } from 'lucide-react'
 import { parseWorkbook, type ParsedWorkbook } from '@/lib/excel'
 
+import { useCallback, useRef, useState } from 'react'
+import { UploadCloud, FileSpreadsheet, Loader2, X } from 'lucide-react'
+import { parseWorkbook, type ParsedWorkbook } from '@/lib/excel'
+import { isSupportedFile, SUPPORTED_EXTENSIONS } from '@/lib/fileParser'
+
 interface Props {
   onLoaded: (wb: ParsedWorkbook) => void
   onDemo: () => void
@@ -19,9 +24,9 @@ export function UploadArea({ onLoaded, onDemo, loading, error, onDismissError }:
 
   const handleFile = useCallback(
     async (file: File) => {
-      if (!/\.xlsx?$/i.test(file.name)) {
+      if (!isSupportedFile(file.name)) {
         onDismissError()
-        alert('Formato não suportado. Envie um arquivo .xlsx (Excel).')
+        alert(`Formato não suportado: ${file.name}\nUse ${SUPPORTED_EXTENSIONS}.`)
         return
       }
       setFileName(file.name)
@@ -70,12 +75,12 @@ export function UploadArea({ onLoaded, onDemo, loading, error, onDismissError }:
               : 'Arraste seu arquivo ou clique para selecionar'}
         </p>
         <p className="mt-1 text-sm text-muted-foreground">
-          Somente arquivos .xlsx · processado localmente
+          {SUPPORTED_EXTENSIONS} · processado localmente
         </p>
         <input
           ref={inputRef}
           type="file"
-          accept=".xlsx,.xls"
+          accept=".csv,.xlsx,.xls,.ods,.tsv,.txt"
           className="hidden"
           onChange={(e) => {
             const f = e.target.files?.[0]

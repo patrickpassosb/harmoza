@@ -13,7 +13,7 @@ import type {
 } from './types'
 import { generateDashboard } from './dashboard'
 import { demoWorkbook } from './demo'
-import { parseExcelFile } from './excel'
+import { parseFiles } from './fileParser'
 import pb from './pocketbase/client'
 
 const LS_KEY = 'harmoza-state-v2'
@@ -45,7 +45,7 @@ interface HarmozaCtx {
   updateSheet: (sheet: SheetData) => void
   addRow: () => void
   addColumn: (name: string) => void
-  importFile: (file: File) => Promise<void>
+  importFile: (files: File | File[]) => Promise<void>
   loadDemo: () => Promise<void>
   switchWorkbook: (id: string) => void
   reset: () => void
@@ -139,42 +139,59 @@ export function HarmozaProvider({ children }: { children: ReactNode }) {
     )
   }, [workbook])
 
-  const importFile = useCallback(async (file: File) => {
+  const importFile = useCallback(async (files: File | File[]) => {
+    const fileArr = Array.isArray(files) ? files : [files]
+    if (!fileArr.length) return
     setImportState('loading')
     setImportError('')
     setWarnings([])
     try {
-      const res = await parseExcelFile(file)
-      const wb = res.workbook
-      setWorkbooks((prev) => [...prev, wb])
-      setActiveWorkbookId(wb.id)
-      setWarnings(res.warnings || [])
-      setImportState('success')
-      setView('sheet')
+      const res = await parseFiles(fileArr)
+      if (res.workbook) {
+        const wb = res.workbook
+        setWorkbooks((prev) => [...prev, wb])
+        setActiveWorkbookId(wb.id)
+        setWarnings([...res.warnings, ...res.errors])
+        setImportState('success')
+        setView('sheet')
 
-      if (wb.sheets && wb.sheets.length > 0) {
-        const gen = generateDashboard(wb.sheets[0])
-        setComponents(gen.components)
-        setLayout(gen.layout)
-        setDashReady(true)
-      }
-
-      if (pb.authStore.isValid && pb.authStore.record?.id) {
-        try {
-          await pb.collection('workbooks').create({
-            owner: pb.authStore.record.id,
-            name: wb.fileName.replace(/\.xlsx?$/i, ''),
-            fileName: wb.fileName,
-            rawJson: wb,
-          })
-        } catch (e) {
-          console.warn('Could not persist workbook in backend:', e)
+        if (wb.sheets && wb.sheets.length > 0) {
+          const gen = generateDashboard(wb.sheets[0])
+          setComponents(gen.components)
+          setLayout(gen.layout)
+          setDashReady(true)
         }
-      }
 
-      toast.success(`Planilha "${wb.fileName}" importada!`, {
-        description: `${wb.sheets.length} aba(s) identificada(s). Redirecionando para visualização.`,
-      })
+        if (pb.authStore.isValid && pb.authStore.record?.id) {
+          try {
+            await pb.collection('workbooks').create({
+              owner: pb.authStore.record.id,
+              name: wb.fileName.replace(/\.[^/.]+$/, ''),
+              fileName: wb.fileName,
+              rawJson: wb,
+              source: 'upload',
+            })
+          } catch (e) {
+            console.warn('Could not persist workbook in backend:', e)
+          }
+        }
+
+        if (res.errors.length > 0) {
+          toast.warning('Importação parcial', {
+            description: `${wb.sheets.length} aba(s) importada(s). ${res.errors.length} arquivo(s) não puderam ser processado(s).`,
+          })
+        } else {
+          toast.success(`Planilha "${wb.fileName}" importada!`, {
+            description: `${wb.sheets.length} aba(s) identificada(s). Redirecionando para visualização.`,
+          })
+        }
+      } else {
+        setImportState('error')
+        const msg =
+          res.errors.length > 0 ? res.errors.join('\n') : 'Nenhum arquivo válido foi encontrado.'
+        setImportError(msg)
+        toast.error('Erro na importação', { description: msg })
+      }
     } catch (err) {
       setImportState('error')
       const msg = err instanceof Error ? err.message : 'Não foi possível processar o arquivo.'

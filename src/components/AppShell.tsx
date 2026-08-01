@@ -65,7 +65,6 @@ export function AppShell({ initialView }: { initialView?: 'sheet' | 'dashboard' 
                 <LoadingState />
               ) : (
                 <ExcelUpload
-                  onLoaded={(file) => void importFile(file)}
                   onDemo={loadDemo}
                   loading={importState === 'loading'}
                   error={importError}
@@ -161,10 +160,7 @@ export function AppShell({ initialView }: { initialView?: 'sheet' | 'dashboard' 
               </button>
             </div>
             <ExcelUpload
-              onLoaded={(file) => {
-                void importFile(file)
-                setShowImport(false)
-              }}
+              onSuccessClose={() => setShowImport(false)}
               onDemo={() => {
                 loadDemo()
                 setShowImport(false)

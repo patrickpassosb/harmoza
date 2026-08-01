@@ -1,5 +1,5 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react'
-import type { ReactNode } from 'react'
+import type { Dispatch, ReactNode, SetStateAction } from 'react'
 import { toast } from 'sonner'
 import type {
   AgentMessage,
@@ -67,6 +67,7 @@ interface HarmozaCtx {
   agentMessages: AgentMessage[]
   agentStatus: AgentStatus
   agentError: string
+  agentTargetWorkbookId: string | null
   sendAgentText: (text: string) => Promise<void>
   retryAgent: () => Promise<void>
   clearAgent: () => void
@@ -129,6 +130,7 @@ export function HarmozaProvider({ children }: { children: ReactNode }) {
   const agentMessagesRef = useRef<AgentMessage[]>([])
   const [agentStatus, setAgentStatus] = useState<AgentStatus>('idle')
   const [agentError, setAgentError] = useState('')
+  const [agentTargetWorkbookId, setAgentTargetWorkbookId] = useState<string | null>(null)
   const lastQueryRef = useRef('')
 
   const workbook = useMemo(
@@ -296,6 +298,7 @@ export function HarmozaProvider({ children }: { children: ReactNode }) {
     agentMessagesRef.current = []
     setAgentOpen(false)
     setAgentError('')
+    setAgentTargetWorkbookId(null)
   }, [])
 
   useEffect(() => {
@@ -577,6 +580,22 @@ export function HarmozaProvider({ children }: { children: ReactNode }) {
     }
   }, [])
 
+  const persistWorkbookChange = useCallback((wb: Workbook) => {
+    if (!pb.authStore.isValid || !pb.authStore.record?.id) return
+    pb.collection('workbooks')
+      .getList(1, 1, {
+        filter: `owner = "${pb.authStore.record.id}" && fileName = "${wb.fileName}"`,
+      })
+      .then((res) => {
+        if (res.items.length > 0) {
+          pb.collection('workbooks')
+            .update(res.items[0].id, { rawJson: wb })
+            .catch(() => {})
+        }
+      })
+      .catch(() => {})
+  }, [])
+
   const sendAgentText = useCallback(
     async (text: string) => {
       const trimmed = text.trim()
@@ -594,15 +613,17 @@ export function HarmozaProvider({ children }: { children: ReactNode }) {
       setAgentError('')
       lastQueryRef.current = trimmed
 
-      const wb = lastWorkbookRef.current
-      const dataSummary = wb
-        ? wb.sheets
+      const workbooksSummary = workbooks
+        .map((wb) => {
+          const sheetsInfo = wb.sheets
             .map(
               (s) =>
-                `Aba "${s.name}": ${s.rows.length} linhas, colunas: ${s.columns.map((c) => c.name + ' (' + c.type + ')').join(', ')}`,
+                `  Aba "${s.name}": ${s.rows.length} linhas, colunas: ${s.columns.map((c) => c.name + ' (' + c.type + ')').join(', ')}`,
             )
             .join('\n')
-        : 'Nenhum dado carregado'
+          return `Arquivo: name="${wb.fileName.replace(/\.[^/.]+$/, '')}", fileName="${wb.fileName}", id="${wb.id}"\n${sheetsInfo}`
+        })
+        .join('\n---\n')
 
       const dashboardSummary =
         components.length > 0
@@ -614,27 +635,29 @@ export function HarmozaProvider({ children }: { children: ReactNode }) {
       try {
         const res = await pb.send('/backend/v1/harmoza/agent', {
           method: 'POST',
-          body: JSON.stringify({ messages: messagesPayload, dataSummary, dashboardSummary }),
+          body: JSON.stringify({ messages: messagesPayload, workbooksSummary, dashboardSummary }),
         })
         const reply: string = res?.reply ?? 'Desculpe, não consegui processar.'
         const action: string | null = res?.action ?? null
         const params: Record<string, unknown> = res?.params ?? {}
         let finalReply = reply
         let finalAction = action
-        if (action && action !== 'answer' && activeSheet) {
+        if (action && action !== 'answer') {
           setAgentStatus('executing')
           try {
             const ex = executeAgentAction(action, params, {
-              sheet: activeSheet,
-              addComponent,
-              removeComponent,
-              updateComponentKind,
-              deleteItemFromSheet,
+              workbooks,
+              activeWorkbookId,
+              setWorkbooks,
+              setActiveWorkbookId,
               components,
-              createSheet,
-              speak,
+              setComponents,
+              setLayout,
+              setDashReady,
               setView,
-              addColumn,
+              setAgentTargetWorkbookId,
+              speak,
+              persistWorkbookChange,
             })
             finalReply = ex.reply ?? reply
             finalAction = ex.action
@@ -661,16 +684,7 @@ export function HarmozaProvider({ children }: { children: ReactNode }) {
         setAgentStatus('error')
       }
     },
-    [
-      activeSheet,
-      components,
-      addComponent,
-      removeComponent,
-      createSheet,
-      speak,
-      setView,
-      addColumn,
-    ],
+    [workbooks, activeWorkbookId, components, speak, setView, persistWorkbookChange],
   )
 
   const retryAgent = useCallback(async () => {
@@ -782,6 +796,7 @@ export function HarmozaProvider({ children }: { children: ReactNode }) {
     agentMessages,
     agentStatus,
     agentError,
+    agentTargetWorkbookId,
     sendAgentText,
     retryAgent,
     clearAgent,
@@ -795,151 +810,336 @@ function executeAgentAction(
   action: string,
   params: Record<string, unknown>,
   env: {
-    sheet: SheetData
-    addComponent: (c: Omit<DashComponent, 'id'>) => void
-    removeComponent: (id: string) => void
-    updateComponentKind: (id: string, kind: DashKind) => void
-    deleteItemFromSheet: (itemTarget: string) => { count: number; sheetName: string }
+    workbooks: Workbook[]
+    activeWorkbookId: string | null
+    setWorkbooks: Dispatch<SetStateAction<Workbook[]>>
+    setActiveWorkbookId: (id: string) => void
     components: DashComponent[]
-    createSheet: (name: string) => void
-    speak: (t: string) => void
+    setComponents: Dispatch<SetStateAction<DashComponent[]>>
+    setLayout: Dispatch<SetStateAction<DashLayoutItem[]>>
+    setDashReady: (v: boolean) => void
     setView: (v: ViewMode) => void
-    addColumn: (name: string) => void
+    setAgentTargetWorkbookId: (id: string) => void
+    speak: (t: string) => void
+    persistWorkbookChange: (wb: Workbook) => void
   },
-): { reply?: string; action?: string } {
+): { reply?: string; action?: string | null } {
   const {
-    sheet,
-    addComponent,
-    removeComponent,
-    updateComponentKind,
-    deleteItemFromSheet,
+    workbooks,
+    activeWorkbookId,
+    setWorkbooks,
+    setActiveWorkbookId,
     components,
-    createSheet,
+    setComponents,
+    setLayout,
+    setDashReady,
     setView,
+    setAgentTargetWorkbookId,
+    persistWorkbookChange,
   } = env
+
+  function findTargetWorkbook(): { workbook: Workbook | null; ambiguous: boolean } {
+    const target = String(params.workbook ?? params.fileName ?? '')
+      .trim()
+      .toLowerCase()
+    if (!target) {
+      if (workbooks.length === 1) return { workbook: workbooks[0], ambiguous: false }
+      if (workbooks.length > 1) return { workbook: null, ambiguous: true }
+      return { workbook: null, ambiguous: false }
+    }
+    const found = workbooks.find(
+      (wb) =>
+        wb.fileName.toLowerCase() === target ||
+        wb.fileName.replace(/\.[^/.]+$/, '').toLowerCase() === target ||
+        wb.fileName.toLowerCase().includes(target),
+    )
+    return { workbook: found ?? null, ambiguous: false }
+  }
+
+  function resolveSheet(wb: Workbook): SheetData | null {
+    const sheetName = String(params.sheetName ?? '')
+      .trim()
+      .toLowerCase()
+    if (sheetName) {
+      return (
+        wb.sheets.find((s) => s.name.toLowerCase() === sheetName) ??
+        wb.sheets.find((s) => s.name.toLowerCase().includes(sheetName)) ??
+        wb.sheets.find((s) => s.id === wb.activeSheetId) ??
+        wb.sheets[0] ??
+        null
+      )
+    }
+    return wb.sheets.find((s) => s.id === wb.activeSheetId) ?? wb.sheets[0] ?? null
+  }
+
+  function normalizeKind(kindRaw: string): DashKind {
+    const k = kindRaw.toLowerCase()
+    if (k === 'pie' || k === 'pizza' || k === 'donut') return 'pie'
+    if (k === 'line' || k === 'linha') return 'line'
+    if (k === 'ranking') return 'ranking'
+    if (k === 'table' || k === 'tabela') return 'table'
+    return 'bar'
+  }
+
+  function ambiguityReply(): string {
+    const list = workbooks.map((w) => `- ${w.fileName}`).join('\n')
+    return `Você tem múltiplos arquivos. Por favor, especifique qual arquivo deseja usar:\n${list}`
+  }
+
   switch (action) {
     case 'update_chart': {
+      const { workbook: targetWb, ambiguous } = findTargetWorkbook()
+      if (ambiguous) return { reply: ambiguityReply(), action: null }
+      if (!targetWb) return { reply: 'Não encontrei o arquivo especificado.', action: null }
+      setAgentTargetWorkbookId(targetWb.id)
+
+      const kind = normalizeKind(String(params.kind ?? 'bar'))
       const target = String(params.title ?? params.target ?? '').trim()
-      const kindRaw = String(params.kind ?? 'bar').toLowerCase()
-      const kind: DashKind =
-        kindRaw === 'pie' || kindRaw === 'pizza' || kindRaw === 'donut'
-          ? 'pie'
-          : kindRaw === 'line' || kindRaw === 'linha'
-            ? 'line'
-            : kindRaw === 'ranking'
-              ? 'ranking'
-              : kindRaw === 'table' || kindRaw === 'tabela'
-                ? 'table'
-                : 'bar'
+
+      if (targetWb.id !== activeWorkbookId) {
+        setActiveWorkbookId(targetWb.id)
+        const sheet = resolveSheet(targetWb)
+        if (sheet) {
+          const gen = generateDashboard(sheet)
+          const comp = target
+            ? gen.components.find((c) => c.title.toLowerCase().includes(target.toLowerCase()))
+            : gen.components[0]
+          if (comp) {
+            setComponents(gen.components.map((c) => (c.id === comp.id ? { ...c, kind } : c)))
+            setLayout(gen.layout)
+            setDashReady(true)
+            setView('dashboard')
+            return {
+              reply: `Alterei o gráfico **"${comp.title}"** para **${kind}** no arquivo **${targetWb.fileName}**.`,
+              action,
+            }
+          }
+        }
+        return { reply: 'Não encontrei o gráfico no arquivo especificado.', action: null }
+      }
 
       const comp = components.find((c) =>
         target ? c.title.toLowerCase().includes(target.toLowerCase()) : true,
       )
       if (comp) {
-        updateComponentKind(comp.id, kind)
-        const labelMap: Record<string, string> = {
-          bar: 'barras',
-          line: 'linhas',
-          pie: 'pizza',
-          ranking: 'ranking',
-          table: 'tabela',
-        }
+        setComponents((prev) => prev.map((c) => (c.id === comp.id ? { ...c, kind } : c)))
         return {
-          reply: `Alterei o tipo do gráfico **"${comp.title}"** para **${labelMap[kind] ?? kind}** com sucesso!`,
+          reply: `Alterei o tipo do gráfico **"${comp.title}"** para **${kind}** no arquivo **${targetWb.fileName}**.`,
           action,
         }
       }
-      return { reply: 'Não encontrei o gráfico solicitado no seu dashboard.', action: null }
+      return { reply: 'Não encontrei o gráfico solicitado.', action: null }
     }
     case 'delete_item': {
       const itemTarget = String(params.item ?? params.target ?? '').trim()
-      if (!itemTarget) {
+      if (!itemTarget)
         return { reply: 'Por favor, informe qual item deseja remover da planilha.', action: null }
-      }
-      const result = deleteItemFromSheet(itemTarget)
-      if (result.count > 0) {
+
+      const { workbook: targetWb, ambiguous } = findTargetWorkbook()
+      if (ambiguous) return { reply: ambiguityReply(), action: null }
+      if (!targetWb) return { reply: 'Não encontrei o arquivo especificado.', action: null }
+      setAgentTargetWorkbookId(targetWb.id)
+
+      const sheet = resolveSheet(targetWb)
+      if (!sheet) return { reply: 'Não encontrei a aba especificada.', action: null }
+
+      const lowerTarget = itemTarget.toLowerCase()
+      const count = sheet.rows.filter((row) =>
+        row.some((cell) => cell !== null && String(cell).toLowerCase().includes(lowerTarget)),
+      ).length
+      if (count === 0) {
         return {
-          reply: `Sucesso! Removi **${result.count}** linha(s) contendo "**${itemTarget}**" da aba **${result.sheetName}**.`,
-          action,
+          reply: `Não encontrei nenhum registro contendo "${itemTarget}" na aba **${sheet.name}** do arquivo **${targetWb.fileName}**.`,
+          action: null,
         }
       }
+      const newRows = sheet.rows.filter(
+        (row) =>
+          !row.some((cell) => cell !== null && String(cell).toLowerCase().includes(lowerTarget)),
+      )
+      const updatedSheet = { ...sheet, rows: newRows }
+      const updatedWb = {
+        ...targetWb,
+        sheets: targetWb.sheets.map((s) => (s.id === sheet.id ? updatedSheet : s)),
+      }
+      setWorkbooks((prev) => prev.map((w) => (w.id === targetWb.id ? updatedWb : w)))
+      persistWorkbookChange(updatedWb)
+
+      if (targetWb.id === activeWorkbookId) {
+        const gen = generateDashboard(updatedSheet)
+        setComponents(gen.components)
+        setLayout(gen.layout)
+      }
       return {
-        reply: `Não encontrei nenhum registro contendo "${itemTarget}" na planilha ativa.`,
-        action: null,
+        reply: `Sucesso! Removi **${count}** linha(s) contendo "**${itemTarget}**" da aba **${sheet.name}** no arquivo **${targetWb.fileName}**.`,
+        action,
       }
     }
     case 'create_chart':
     case 'add_chart': {
       const title = String(params.title ?? 'Novo gráfico')
-      const kindRaw = String(params.kind ?? 'bar').toLowerCase()
-      const kind =
-        kindRaw === 'pie' || kindRaw === 'pizza' || kindRaw === 'donut'
-          ? 'pie'
-          : kindRaw === 'line'
-            ? 'line'
-            : kindRaw === 'ranking'
-              ? 'ranking'
-              : kindRaw === 'table'
-                ? 'table'
-                : 'bar'
+      const kind = normalizeKind(String(params.kind ?? 'bar'))
+
+      const { workbook: targetWb, ambiguous } = findTargetWorkbook()
+      if (ambiguous) return { reply: ambiguityReply(), action: null }
+      if (!targetWb) return { reply: 'Não encontrei o arquivo especificado.', action: null }
+      setAgentTargetWorkbookId(targetWb.id)
+
+      const sheet = resolveSheet(targetWb)
+      if (!sheet) return { reply: 'Não encontrei a aba especificada.', action: null }
+
       const tIdx = sheet.columns.findIndex((c) => c.type === 'text')
       const nIdx = sheet.columns.findIndex((c) => c.type === 'number' || c.type === 'currency')
-      if (tIdx >= 0 && nIdx >= 0) {
-        const m = new Map<string, number>()
-        for (const r of sheet.rows) {
-          const g = String(r[tIdx] ?? '').trim()
-          const v = r[nIdx]
-          if (!g || typeof v !== 'number') continue
-          m.set(g, (m.get(g) ?? 0) + v)
-        }
-        const data = Array.from(m.entries())
-          .sort((a, b) => b[1] - a[1])
-          .map(([l, v]) => ({ label: l, value: Math.round(v * 100) / 100 }))
-        addComponent({
-          kind,
-          title,
-          data,
-          config: { currency: sheet.columns[nIdx].type === 'currency' },
-        })
-        return { reply: 'Pronto! Criei o gráfico "' + title + '" com os dados reais.', action }
+      if (tIdx < 0 || nIdx < 0)
+        return { reply: 'Não encontrei colunas suficientes para criar esse gráfico.', action: null }
+
+      const m = new Map<string, number>()
+      for (const r of sheet.rows) {
+        const g = String(r[tIdx] ?? '').trim()
+        const v = r[nIdx]
+        if (!g || typeof v !== 'number') continue
+        m.set(g, (m.get(g) ?? 0) + v)
       }
-      return { reply: 'Não encontrei colunas suficientes para criar esse gráfico.', action: null }
+      const data = Array.from(m.entries())
+        .sort((a, b) => b[1] - a[1])
+        .map(([l, v]) => ({ label: l, value: Math.round(v * 100) / 100 }))
+      const newId = 'dash-' + uid()
+      const newComp: DashComponent = {
+        id: newId,
+        kind,
+        title,
+        data,
+        config: { currency: sheet.columns[nIdx].type === 'currency' },
+      }
+
+      if (targetWb.id === activeWorkbookId) {
+        setLayout((prev) => {
+          const maxY = prev.reduce((mx, l) => Math.max(mx, l.y + l.h), 0)
+          return [...prev, { i: newId, x: 0, y: maxY, w: 5, h: 4 }]
+        })
+        setComponents((prev) => [...prev, newComp])
+        setView('dashboard')
+      } else {
+        setActiveWorkbookId(targetWb.id)
+        const gen = generateDashboard(sheet)
+        const maxY = gen.layout.reduce((mx, l) => Math.max(mx, l.y + l.h), 0)
+        setComponents([...gen.components, newComp])
+        setLayout([...gen.layout, { i: newId, x: 0, y: maxY, w: 5, h: 4 }])
+        setDashReady(true)
+        setView('dashboard')
+      }
+      return {
+        reply: `Pronto! Criei o gráfico **"${title}"** com os dados do arquivo **${targetWb.fileName}**.`,
+        action,
+      }
     }
     case 'remove_chart': {
       const target = String(params.title ?? params.target ?? '')
+      const { workbook: targetWb, ambiguous } = findTargetWorkbook()
+      if (ambiguous) return { reply: ambiguityReply(), action: null }
+      if (!targetWb) return { reply: 'Não encontrei o arquivo especificado.', action: null }
+      setAgentTargetWorkbookId(targetWb.id)
+
+      if (targetWb.id !== activeWorkbookId) {
+        return {
+          reply: `Para remover um componente do arquivo **${targetWb.fileName}**, abra o arquivo primeiro e depois tente novamente.`,
+          action: null,
+        }
+      }
       const comp = components.find(
         (c) => target && c.title.toLowerCase().includes(target.toLowerCase()),
       )
       if (comp) {
-        removeComponent(comp.id)
-        return { reply: 'Removi o componente "' + comp.title + '".', action }
+        setComponents((prev) => prev.filter((c) => c.id !== comp.id))
+        setLayout((prev) => prev.filter((l) => l.i !== comp.id))
+        return {
+          reply: `Removi o componente **"${comp.title}"** do arquivo **${targetWb.fileName}**.`,
+          action,
+        }
       }
       return { reply: 'Não encontrei um componente com esse nome.', action: null }
     }
     case 'move_chart': {
       const target = String(params.title ?? params.target ?? '')
+      const { workbook: targetWb, ambiguous } = findTargetWorkbook()
+      if (ambiguous) return { reply: ambiguityReply(), action: null }
+      if (!targetWb) return { reply: 'Não encontrei o arquivo especificado.', action: null }
+      setAgentTargetWorkbookId(targetWb.id)
       const comp = components.find(
         (c) => target && c.title.toLowerCase().includes(target.toLowerCase()),
       )
       if (!comp) return { reply: 'Não encontrei o componente para mover.', action: null }
-      return { reply: 'Arraste "' + comp.title + '" pelo cabeçalho para reposicionar.', action }
+      return {
+        reply: `Arraste **"${comp.title}"** pelo cabeçalho para reposicionar no arquivo **${targetWb.fileName}**.`,
+        action,
+      }
     }
     case 'add_kpi': {
       const title = String(params.title ?? 'Novo indicador')
       const value = String(params.value ?? '')
-      addComponent({
+      const { workbook: targetWb, ambiguous } = findTargetWorkbook()
+      if (ambiguous) return { reply: ambiguityReply(), action: null }
+      if (!targetWb) return { reply: 'Não encontrei o arquivo especificado.', action: null }
+      setAgentTargetWorkbookId(targetWb.id)
+
+      const newId = 'dash-' + uid()
+      const newComp: DashComponent = {
+        id: newId,
         kind: 'kpi',
         title,
         data: [{ label: title, value: 0 }],
         config: { value: value || '—' },
-      })
-      return { reply: 'Adicionei o indicador "' + title + '" ao dashboard.', action }
+      }
+
+      if (targetWb.id === activeWorkbookId) {
+        setLayout((prev) => {
+          const maxY = prev.reduce((mx, l) => Math.max(mx, l.y + l.h), 0)
+          return [...prev, { i: newId, x: 0, y: maxY, w: 5, h: 4 }]
+        })
+        setComponents((prev) => [...prev, newComp])
+        setView('dashboard')
+      } else {
+        setActiveWorkbookId(targetWb.id)
+        const sheet = resolveSheet(targetWb)
+        if (sheet) {
+          const gen = generateDashboard(sheet)
+          const maxY = gen.layout.reduce((mx, l) => Math.max(mx, l.y + l.h), 0)
+          setComponents([...gen.components, newComp])
+          setLayout([...gen.layout, { i: newId, x: 0, y: maxY, w: 5, h: 4 }])
+          setDashReady(true)
+          setView('dashboard')
+        }
+      }
+      return {
+        reply: `Adicionei o indicador **"${title}"** ao dashboard do arquivo **${targetWb.fileName}**.`,
+        action,
+      }
     }
     case 'create_sheet': {
       const name = String(params.name ?? params.title ?? 'Nova aba')
-      createSheet(name)
+      const { workbook: targetWb, ambiguous } = findTargetWorkbook()
+      if (ambiguous) return { reply: ambiguityReply(), action: null }
+      if (!targetWb) return { reply: 'Não encontrei o arquivo especificado.', action: null }
+      setAgentTargetWorkbookId(targetWb.id)
+
+      const ns: SheetData = {
+        id: 'sheet-' + uid(),
+        name,
+        columns: [{ name: 'Coluna A', type: 'text' }],
+        rows: [],
+      }
+      const updatedWb = { ...targetWb, sheets: [...targetWb.sheets, ns], activeSheetId: ns.id }
+      setWorkbooks((prev) => prev.map((w) => (w.id === targetWb.id ? updatedWb : w)))
+      persistWorkbookChange(updatedWb)
+
+      if (targetWb.id !== activeWorkbookId) {
+        setActiveWorkbookId(targetWb.id)
+      }
       setView('sheet')
-      return { reply: 'Criei a nova aba "' + name + '" e deixei selecionada.', action }
+      return {
+        reply: `Criei a nova aba **"${name}"** no arquivo **${targetWb.fileName}**.`,
+        action,
+      }
     }
     default:
       return { reply: undefined }

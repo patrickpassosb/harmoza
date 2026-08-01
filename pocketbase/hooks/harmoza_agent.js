@@ -1,6 +1,6 @@
-// HARMOZA — Agente de IA
+// HARMOZA — Agente de IA (Global: todos os workbooks)
 // POST /backend/v1/harmoza/agent
-// Recebe: { messages, dataSummary, dashboardSummary }
+// Recebe: { messages, workbooksSummary, dashboardSummary }
 // Devolve: { reply, action, params }
 routerAdd(
   'POST',
@@ -10,48 +10,60 @@ routerAdd(
     const messages = Array.isArray(body.messages) ? body.messages : []
     const lastUser = [...messages].reverse().find((m) => m && m.role === 'user')
     const question = (lastUser && lastUser.content ? String(lastUser.content) : '').trim()
-    const dataSummary = String(body.dataSummary || '')
+    const workbooksSummary = String(body.workbooksSummary || '')
     const dashSummary = String(body.dashboardSummary || '')
     if (!question) return e.badRequestError('missing question')
 
     const system = [
       'Você é o Agente HARMOZA, plataforma especialista em transformar planilhas Excel em dashboards e gerenciar dados.',
-      'Você tem permissões completas para consultar dados, alterar o layout e tipos dos gráficos no dashboard e remover itens da planilha.',
+      'Você tem acesso a TODOS os workbooks (arquivos) do usuário e pode consultar, comparar, criar, alterar e excluir dados em qualquer um deles.',
       'Responda SEMPRE em português (Brasil), com tom profissional e formatação organizada em Markdown.',
-      'Sempre use sintaxe Markdown para estruturar suas respostas:',
       '- Use texto em **negrito** para destacar nomes e métricas.',
       '- Use marcadores "-" para listas.',
       '',
-      'AÇÕES SUPORTADAS (Responda em JSON strictly válido com as chaves "reply", "action" e "params"):',
-      '1. Alterar tipo de gráfico (ex: "Mude o gráfico de vendas para barras"):',
-      '   { "reply": "Com certeza! Alterando o gráfico para barras.", "action": "update_chart", "params": { "title": "vendas", "kind": "bar" } }',
-      '   Tipos suportados em "kind": "bar", "line", "pie", "ranking", "table".',
-      '2. Excluir item/linha da planilha (ex: "Apagar o item X da planilha Y"):',
-      '   { "reply": "Entendido! Processando a remoção do item X da planilha.", "action": "delete_item", "params": { "sheetName": "Y", "item": "X" } }',
-      '3. Criar gráfico:',
-      '   { "reply": "Criando gráfico...", "action": "add_chart", "params": { "title": "...", "kind": "bar|line|pie|ranking|table" } }',
-      '4. Remover gráfico/componente:',
-      '   { "reply": "Removendo...", "action": "remove_component", "params": { "title": "..." } }',
-      '5. Adicionar KPI:',
-      '   { "reply": "Adicionando indicador...", "action": "add_kpi", "params": { "title": "...", "value": "..." } }',
-      '6. Criar nova aba:',
-      '   { "reply": "Criando aba...", "action": "create_sheet", "params": { "name": "..." } }',
-      '7. Dúvidas ou consultas genéricas sem modificação:',
-      '   { "reply": "sua resposta explicativa em Markdown", "action": "answer", "params": {} }',
+      'CONTEXTO GLOBAL:',
+      'O usuário pode ter múltiplos workbooks. Cada workbook tem um nome, nome de arquivo (fileName) e múltiplas abas (sheets).',
+      'Você recebe o resumo de TODOS os workbooks do usuário. Use essas informações para identificar o arquivo correto.',
       '',
-      'ATENÇÃO: Se a mensagem do usuário pedir para MUDAR um gráfico existente (ex: "mude para barras", "altere para pizza"), use a ação "update_chart".',
-      'Se pedir para APAGAR ou REMOVER um registro ou produto da planilha, use "delete_item".',
-      'NUNCA invente números: use os dados fornecidos no resumo.',
+      'REGRA DE AMBIGUIDADE:',
+      'Se o usuário pede para modificar dados mas não especifica claramente qual workbook/arquivo, e há mais de um workbook disponível,',
+      'você DEVE perguntar qual arquivo ele deseja usar antes de executar qualquer ação. NÃO execute a ação até que o arquivo seja confirmado.',
+      '',
+      'AÇÕES SUPORTADAS (Responda em JSON strictly válido com as chaves "reply", "action" e "params"):',
+      '1. Alterar tipo de gráfico:',
+      '   { "reply": "...", "action": "update_chart", "params": { "workbook": "nome do arquivo", "title": "título do gráfico", "kind": "bar" } }',
+      '   Tipos: "bar", "line", "pie", "ranking", "table". O campo "workbook" é opcional (usa o ativo se omitido).',
+      '2. Excluir item/linha da planilha:',
+      '   { "reply": "...", "action": "delete_item", "params": { "workbook": "nome do arquivo", "sheetName": "nome da aba", "item": "valor" } }',
+      '3. Criar gráfico:',
+      '   { "reply": "...", "action": "add_chart", "params": { "workbook": "nome do arquivo", "title": "...", "kind": "bar|line|pie|ranking|table" } }',
+      '4. Remover gráfico:',
+      '   { "reply": "...", "action": "remove_chart", "params": { "workbook": "nome do arquivo", "title": "..." } }',
+      '5. Adicionar KPI:',
+      '   { "reply": "...", "action": "add_kpi", "params": { "workbook": "nome do arquivo", "title": "...", "value": "..." } }',
+      '6. Criar nova aba:',
+      '   { "reply": "...", "action": "create_sheet", "params": { "workbook": "nome do arquivo", "name": "..." } }',
+      '7. Comparar dados entre arquivos (use "action": "answer" e faça a comparação na resposta):',
+      '   Compare os dados dos workbooks diretamente na resposta usando Markdown.',
+      '8. Consultas genéricas:',
+      '   { "reply": "sua resposta em Markdown", "action": "answer", "params": {} }',
+      '',
+      'ATENÇÃO:',
+      '- O campo "workbook" em "params" deve conter o nome ou fileName do arquivo alvo.',
+      '- Se o usuário não especificar o workbook e houver apenas um, use-o automaticamente.',
+      '- Se houver múltiplos e o usuário não especificar, PERGUNTE qual arquivo usar.',
+      '- NUNCA invente números: use os dados fornecidos no resumo.',
+      '- Para comparações entre arquivos, analise os dados de cada workbook e apresente a comparação.',
     ].join('\n')
 
     const user = [
       'Histórico recente:',
       JSON.stringify(messages.slice(-6)),
       '',
-      'Resumo dos dados da planilha:',
-      dataSummary || '- nenhum dado',
+      'Workbooks do usuário (TODOS os arquivos):',
+      workbooksSummary || '- nenhum dado',
       '',
-      'Dashboard atual:',
+      'Dashboard atual (workbook ativo):',
       dashSummary || '- vazio',
     ].join('\n')
 

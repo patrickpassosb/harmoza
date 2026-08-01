@@ -12,7 +12,24 @@ import {
   Cell,
   CartesianGrid,
 } from 'recharts'
-import { TrendingUp, TrendingDown, Trophy } from 'lucide-react'
+import {
+  TrendingUp,
+  TrendingDown,
+  Trophy,
+  MoreVertical,
+  Trash2,
+  Copy,
+  GripVertical,
+  ChevronUp,
+  ChevronDown,
+} from 'lucide-react'
+import { Button } from '@/components/ui/button'
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu'
 import type { DashComponent } from '@/lib/types'
 
 const COLORS = [
@@ -34,6 +51,63 @@ function fmtVal(v: number, currency?: boolean): string {
       maximumFractionDigits: 0,
     })
   return v.toLocaleString('pt-BR', { maximumFractionDigits: 1 })
+}
+
+export interface DashCardProps {
+  comp: DashComponent
+  onRemove: (id: string) => void
+  onDuplicate: (id: string) => void
+  onMove: (id: string, pos: 'top' | 'bottom') => void
+}
+
+export function DashCard({ comp, onRemove, onDuplicate, onMove }: DashCardProps) {
+  return (
+    <div className="group relative flex h-full flex-col overflow-hidden rounded-2xl border border-border bg-white shadow-sm transition-all duration-200 hover:shadow-md">
+      <div className="drag-handle flex cursor-move items-center justify-between border-b border-border/60 bg-muted/10 px-3 py-2.5">
+        <div className="flex min-w-0 items-center gap-1.5">
+          <GripVertical className="h-3.5 w-3.5 shrink-0 cursor-grab text-muted-foreground/40 active:cursor-grabbing" />
+          <span className="truncate text-xs font-semibold text-[#172554]">{comp.title}</span>
+        </div>
+
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-6 w-6 rounded-md text-muted-foreground opacity-0 transition-opacity hover:bg-muted group-hover:opacity-100"
+            >
+              <MoreVertical className="h-3.5 w-3.5" />
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end" className="w-40">
+            <DropdownMenuItem onClick={() => onDuplicate(comp.id)}>
+              <Copy className="mr-2 h-3.5 w-3.5" />
+              <span>Duplicar</span>
+            </DropdownMenuItem>
+            <DropdownMenuItem onClick={() => onMove(comp.id, 'top')}>
+              <ChevronUp className="mr-2 h-3.5 w-3.5" />
+              <span>Mover p/ topo</span>
+            </DropdownMenuItem>
+            <DropdownMenuItem onClick={() => onMove(comp.id, 'bottom')}>
+              <ChevronDown className="mr-2 h-3.5 w-3.5" />
+              <span>Mover p/ fim</span>
+            </DropdownMenuItem>
+            <DropdownMenuItem
+              className="text-red-600 focus:bg-red-50 focus:text-red-600"
+              onClick={() => onRemove(comp.id)}
+            >
+              <Trash2 className="mr-2 h-3.5 w-3.5" />
+              <span>Remover</span>
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
+      </div>
+
+      <div className="min-h-0 flex-1">
+        <DashCardBody comp={comp} />
+      </div>
+    </div>
+  )
 }
 
 export function DashCardBody({ comp }: { comp: DashComponent }) {

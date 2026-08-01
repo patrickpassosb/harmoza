@@ -39,14 +39,24 @@ export function AppShell({
     runAutoDashboard,
   } = useHarmoza()
   const [showImport, setShowImport] = useState(false)
+  const [mobileOpen, setMobileOpen] = useState(false)
+  const [collapsed, setCollapsed] = useState(false)
   const navigate = useNavigate()
+
+  const sidebarProps = {
+    collapsed,
+    mobileOpen,
+    onCloseMobile: () => setMobileOpen(false),
+    onToggleCollapsed: () => setCollapsed((c) => !c),
+  }
+  const openMenu = () => setMobileOpen(true)
 
   if (initialView === 'settings') {
     return (
       <div className="flex h-screen overflow-hidden bg-background">
-        <Sidebar />
+        <Sidebar {...sidebarProps} />
         <div className="flex min-w-0 flex-1 flex-col">
-          <Header />
+          <Header onMenuClick={openMenu} />
           <main className="flex-1 overflow-y-auto">
             <SettingsView onBack={() => navigate('/')} />
           </main>
@@ -60,9 +70,9 @@ export function AppShell({
   if (isAgentView) {
     return (
       <div className="flex h-screen overflow-hidden bg-background">
-        <Sidebar />
+        <Sidebar {...sidebarProps} />
         <div className="flex min-w-0 flex-1 flex-col">
-          <Header />
+          <Header onMenuClick={openMenu} />
           <main className="flex-1 overflow-hidden">
             <AgentWorkspace />
           </main>
@@ -74,9 +84,9 @@ export function AppShell({
   if (!workbook) {
     return (
       <div className="flex h-screen overflow-hidden bg-background">
-        <Sidebar />
+        <Sidebar {...sidebarProps} />
         <div className="flex min-w-0 flex-1 flex-col">
-          <Header />
+          <Header onMenuClick={openMenu} />
           <main className="flex-1 overflow-y-auto">
             <div className="mx-auto max-w-2xl px-6 py-10">
               <h1 className="mb-6 text-center text-2xl font-bold tracking-tight text-[#172554]">
@@ -102,9 +112,9 @@ export function AppShell({
   }
   return (
     <div className="flex h-screen overflow-hidden bg-background">
-      <Sidebar />
+      <Sidebar {...sidebarProps} />
       <div className="flex min-w-0 flex-1 flex-col">
-        <Header />
+        <Header onMenuClick={openMenu} />
         {warnings.length > 0 && (
           <div className="border-b border-amber-200 bg-amber-50 px-5 py-2 text-xs text-amber-700">
             {warnings.map((w, i) => (

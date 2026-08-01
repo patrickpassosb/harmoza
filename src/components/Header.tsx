@@ -1,5 +1,5 @@
 // HARMOZA — cabeçalho principal
-import { Table2, LayoutDashboard, Settings, LogOut } from 'lucide-react'
+import { Table2, LayoutDashboard, Settings, LogOut, Menu } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { ExportButton } from '@/components/ExportButton'
 import {
@@ -14,7 +14,7 @@ import { useHarmoza } from '@/lib/store'
 import { useNavigate } from 'react-router-dom'
 import pb from '@/lib/pocketbase/client'
 
-export function Header() {
+export function Header({ onMenuClick }: { onMenuClick?: () => void }) {
   const {
     fileName,
     workbook,
@@ -29,8 +29,17 @@ export function Header() {
   const navigate = useNavigate()
 
   return (
-    <header className="flex h-14 shrink-0 items-center justify-between gap-4 border-b border-border bg-card px-5">
-      <div className="flex min-w-0 items-center gap-3">
+    <header className="flex h-14 shrink-0 items-center justify-between gap-4 border-b border-border bg-card px-3 md:px-5">
+      <div className="flex min-w-0 items-center gap-2 md:gap-3">
+        {onMenuClick && (
+          <button
+            className="shrink-0 rounded-lg p-2 text-muted-foreground hover:bg-muted md:hidden"
+            onClick={onMenuClick}
+            aria-label="Abrir menu"
+          >
+            <Menu className="h-5 w-5" />
+          </button>
+        )}
         <div className="flex min-w-0 flex-col">
           <p className="truncate text-sm font-semibold text-foreground">
             {importState === 'success' && fileName ? fileName : 'HARMOZA'}
@@ -50,7 +59,7 @@ export function Header() {
 
       <div className="flex items-center gap-2">
         {workbook && (
-          <div className="flex items-center rounded-lg border border-border bg-muted p-0.5">
+          <div className="hidden items-center rounded-lg border border-border bg-muted p-0.5 sm:flex">
             <Button
               variant="ghost"
               size="sm"

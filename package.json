@@ -2,7 +2,7 @@
   "name": "harmoza",
   "description": "HARMOZA — a gestão que se encaixa no seu negócio. Planilhas Excel em dashboards inteligentes.",
   "private": true,
-  "version": "0.0.49",
+  "version": "0.0.50",
   "type": "module",
   "scripts": {
     "start": "vite dev",

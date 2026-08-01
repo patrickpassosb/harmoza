@@ -6,13 +6,20 @@ import { SheetTabs } from './SheetTabs'
 import { SheetTable } from './SheetTable'
 import { DashGrid } from './DashGrid'
 import { AgentPanel, AgentFab } from './AgentPanel'
+import { AgentWorkspace } from './AgentWorkspace'
 import { ExcelUpload } from './ExcelUpload'
 import { LoadingState } from './StateViews'
 import { SettingsView } from './SettingsView'
 import { useHarmoza } from '@/lib/store'
-import { useNavigate } from 'react-router-dom'
+import { useLocation, useNavigate } from 'react-router-dom'
 
-export function AppShell({ initialView }: { initialView?: 'sheet' | 'dashboard' | 'settings' }) {
+export function AppShell({
+  initialView,
+}: {
+  initialView?: 'sheet' | 'dashboard' | 'settings' | 'agent'
+}) {
+  const location = useLocation()
+  const isAgentView = initialView === 'agent' || location.pathname === '/agente'
   const {
     workbook,
     importState,
@@ -46,6 +53,20 @@ export function AppShell({ initialView }: { initialView?: 'sheet' | 'dashboard' 
         </div>
         <AgentPanel />
         <AgentFab />
+      </div>
+    )
+  }
+
+  if (isAgentView) {
+    return (
+      <div className="flex h-screen overflow-hidden bg-background">
+        <Sidebar />
+        <div className="flex min-w-0 flex-1 flex-col">
+          <Header />
+          <main className="flex-1 overflow-hidden">
+            <AgentWorkspace />
+          </main>
+        </div>
       </div>
     )
   }

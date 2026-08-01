@@ -5,6 +5,7 @@ import type {
   AgentMessage,
   AgentStatus,
   DashComponent,
+  DashKind,
   DashLayoutItem,
   ImportState,
   SheetData,
@@ -15,6 +16,7 @@ import { generateDashboard } from './dashboard'
 import { demoWorkbook } from './demo'
 import { parseFiles } from './fileParser'
 import pb from './pocketbase/client'
+import { useRealtime } from '@/hooks/use-realtime'
 
 const LS_KEY = 'harmoza-state-v2'
 const V1_KEY = 'harmoza-state-v1'
@@ -472,6 +474,93 @@ export function HarmozaProvider({ children }: { children: ReactNode }) {
 
   const moveComponent = useCallback((newLayout: DashLayoutItem[]) => setLayout(newLayout), [])
 
+  const updateComponentKind = useCallback((id: string, kind: DashKind) => {
+    setComponents((prev) => prev.map((c) => (c.id === id ? { ...c, kind } : c)))
+  }, [])
+
+  const deleteItemFromSheet = useCallback(
+    (itemTarget: string): { count: number; sheetName: string } => {
+      let count = 0
+      let sheetName = ''
+      if (!activeWorkbookId) return { count, sheetName }
+
+      setWorkbooks((prev) =>
+        prev.map((w) => {
+          if (w.id !== activeWorkbookId) return w
+          const targetSheetId = w.activeSheetId || w.sheets[0]?.id
+          const sheets = w.sheets.map((s) => {
+            if (s.id !== targetSheetId) return s
+            sheetName = s.name
+            const lowerTarget = itemTarget.toLowerCase()
+            const newRows = s.rows.filter((row) => {
+              const hasMatch = row.some(
+                (cell) => cell !== null && String(cell).toLowerCase().includes(lowerTarget),
+              )
+              if (hasMatch) count++
+              return !hasMatch
+            })
+            return { ...s, rows: newRows }
+          })
+          const updatedWb = { ...w, sheets }
+
+          if (pb.authStore.isValid && pb.authStore.record?.id) {
+            pb.collection('workbooks')
+              .getList(1, 1, {
+                filter: `owner = "${pb.authStore.record.id}" && fileName = "${w.fileName}"`,
+              })
+              .then((res) => {
+                if (res.items.length > 0) {
+                  pb.collection('workbooks')
+                    .update(res.items[0].id, { rawJson: updatedWb })
+                    .catch(() => {})
+                }
+              })
+              .catch(() => {})
+          }
+
+          return updatedWb
+        }),
+      )
+
+      if (activeSheet) {
+        const lowerTarget = itemTarget.toLowerCase()
+        const newRows = activeSheet.rows.filter(
+          (row) =>
+            !row.some((cell) => cell !== null && String(cell).toLowerCase().includes(lowerTarget)),
+        )
+        const updatedSheet = { ...activeSheet, rows: newRows }
+        const gen = generateDashboard(updatedSheet)
+        setComponents(gen.components)
+        setLayout(gen.layout)
+      }
+
+      return { count, sheetName: sheetName || activeSheet?.name || 'Planilha' }
+    },
+    [activeWorkbookId, activeSheet],
+  )
+
+  useRealtime('workbooks', (e) => {
+    if (e.action === 'update' || e.action === 'create') {
+      try {
+        const raw =
+          typeof e.record.rawJson === 'string' ? JSON.parse(e.record.rawJson) : e.record.rawJson
+        if (raw && raw.id && raw.sheets) {
+          setWorkbooks((prev) => {
+            const idx = prev.findIndex((w) => w.id === raw.id || w.fileName === raw.fileName)
+            if (idx >= 0) {
+              const updated = [...prev]
+              updated[idx] = raw as Workbook
+              return updated
+            }
+            return [...prev, raw as Workbook]
+          })
+        }
+      } catch {
+        /* intentionally ignored */
+      }
+    }
+  })
+
   const speak = useCallback((text: string) => {
     try {
       if (!('speechSynthesis' in window)) return
@@ -539,6 +628,8 @@ export function HarmozaProvider({ children }: { children: ReactNode }) {
               sheet: activeSheet,
               addComponent,
               removeComponent,
+              updateComponentKind,
+              deleteItemFromSheet,
               components,
               createSheet,
               speak,
@@ -707,6 +798,8 @@ function executeAgentAction(
     sheet: SheetData
     addComponent: (c: Omit<DashComponent, 'id'>) => void
     removeComponent: (id: string) => void
+    updateComponentKind: (id: string, kind: DashKind) => void
+    deleteItemFromSheet: (itemTarget: string) => { count: number; sheetName: string }
     components: DashComponent[]
     createSheet: (name: string) => void
     speak: (t: string) => void
@@ -714,8 +807,67 @@ function executeAgentAction(
     addColumn: (name: string) => void
   },
 ): { reply?: string; action?: string } {
-  const { sheet, addComponent, removeComponent, components, createSheet, setView } = env
+  const {
+    sheet,
+    addComponent,
+    removeComponent,
+    updateComponentKind,
+    deleteItemFromSheet,
+    components,
+    createSheet,
+    setView,
+  } = env
   switch (action) {
+    case 'update_chart': {
+      const target = String(params.title ?? params.target ?? '').trim()
+      const kindRaw = String(params.kind ?? 'bar').toLowerCase()
+      const kind: DashKind =
+        kindRaw === 'pie' || kindRaw === 'pizza' || kindRaw === 'donut'
+          ? 'pie'
+          : kindRaw === 'line' || kindRaw === 'linha'
+            ? 'line'
+            : kindRaw === 'ranking'
+              ? 'ranking'
+              : kindRaw === 'table' || kindRaw === 'tabela'
+                ? 'table'
+                : 'bar'
+
+      const comp = components.find((c) =>
+        target ? c.title.toLowerCase().includes(target.toLowerCase()) : true,
+      )
+      if (comp) {
+        updateComponentKind(comp.id, kind)
+        const labelMap: Record<string, string> = {
+          bar: 'barras',
+          line: 'linhas',
+          pie: 'pizza',
+          ranking: 'ranking',
+          table: 'tabela',
+        }
+        return {
+          reply: `Alterei o tipo do gráfico **"${comp.title}"** para **${labelMap[kind] ?? kind}** com sucesso!`,
+          action,
+        }
+      }
+      return { reply: 'Não encontrei o gráfico solicitado no seu dashboard.', action: null }
+    }
+    case 'delete_item': {
+      const itemTarget = String(params.item ?? params.target ?? '').trim()
+      if (!itemTarget) {
+        return { reply: 'Por favor, informe qual item deseja remover da planilha.', action: null }
+      }
+      const result = deleteItemFromSheet(itemTarget)
+      if (result.count > 0) {
+        return {
+          reply: `Sucesso! Removi **${result.count}** linha(s) contendo "**${itemTarget}**" da aba **${result.sheetName}**.`,
+          action,
+        }
+      }
+      return {
+        reply: `Não encontrei nenhum registro contendo "${itemTarget}" na planilha ativa.`,
+        action: null,
+      }
+    }
     case 'create_chart':
     case 'add_chart': {
       const title = String(params.title ?? 'Novo gráfico')

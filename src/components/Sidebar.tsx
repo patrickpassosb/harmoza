@@ -1,6 +1,7 @@
 import { useRef, useState } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useLocation, useNavigate } from 'react-[#172554]' ? 'react-router-dom' : 'react-router-dom'
 import { Upload, Bot, FileSpreadsheet, Trash2, Loader2 } from 'lucide-react'
+import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 import {
   Dialog,
@@ -13,10 +14,11 @@ import { HarmozaLogo } from './Logo'
 import { useHarmoza } from '@/lib/store'
 
 export function Sidebar() {
-  const { importFile, workbooks, activeWorkbookId, switchWorkbook, setAgentOpen, deleteWorkbook } =
+  const { importFile, workbooks, activeWorkbookId, switchWorkbook, deleteWorkbook } =
     useHarmoza()
   const inputRef = useRef<HTMLInputElement>(null)
   const navigate = useNavigate()
+  const location = useLocation()
   const [deleteTarget, setDeleteTarget] = useState<{ id: string; fileName: string } | null>(null)
   const [isDeleting, setIsDeleting] = useState(false)
 
@@ -37,8 +39,13 @@ export function Sidebar() {
 
       <nav className="mt-4 flex flex-col gap-1 px-3">
         <button
-          onClick={() => setAgentOpen(true)}
-          className="flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium text-white/70 transition-colors hover:bg-white/10 hover:text-white"
+          onClick={() => navigate('/agente')}
+          className={cn(
+            'flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left text-sm font-medium transition-colors',
+            location.pathname === '/agente'
+              ? 'bg-white/15 text-white font-semibold'
+              : 'text-white/70 hover:bg-white/10 hover:text-white',
+          )}
         >
           <Bot className="h-4 w-4" /> Agente de IA
         </button>

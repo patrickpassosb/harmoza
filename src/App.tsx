@@ -15,6 +15,7 @@ const App = () => (
         <Sonner />
         <Routes>
           <Route path="/" element={<Index />} />
+          <Route path="/agente" element={<Index initialView="agent" />} />
           <Route path="/settings" element={<Index initialView="settings" />} />
           <Route path="*" element={<NotFound />} />
         </Routes>

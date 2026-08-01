@@ -1,5 +1,6 @@
 // HARMOZA — shell principal: sidebar + header + integração do fluxo completo
 import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useNavigate, useLocation } from 'react-router-dom'
 import {
   LayoutDashboard,
   Table2,
@@ -11,6 +12,7 @@ import {
   LogOut,
 } from 'lucide-react'
 import pb from '@/lib/pocketbase/client'
+import { SettingsView } from './SettingsView'
 import type {
   AgentResult,
   ChatMessage,
@@ -33,15 +35,40 @@ import { LoadingState, DashboardGenerating } from './StateViews'
 
 const LS_KEY = 'harmoza.state.v1'
 
-type ViewMode = 'sheet' | 'dashboard'
+type ViewMode = 'sheet' | 'dashboard' | 'settings'
 
 interface Props {
+  initialView?: ViewMode
   onLogout: () => void
 }
 
-export function AppShell({ onLogout }: Props) {
+export function AppShell({ initialView, onLogout }: Props) {
+  const navigate = useNavigate()
+  const location = useLocation()
   const [workbook, setWorkbook] = useState<WorkBookState | null>(null)
-  const [view, setView] = useState<ViewMode>('sheet')
+  const [view, setView] = useState<ViewMode>(
+    initialView || (location.pathname === '/settings' ? 'settings' : 'sheet'),
+  )
+
+  useEffect(() => {
+    if (initialView) {
+      setView(initialView)
+    } else if (location.pathname === '/settings') {
+      setView('settings')
+    }
+  }, [initialView, location.pathname])
+
+  useEffect(() => {
+    const savedTheme = localStorage.getItem('harmoza.theme')
+    if (savedTheme === 'dark') {
+      document.documentElement.classList.add('dark')
+    } else if (savedTheme === 'light') {
+      document.documentElement.classList.remove('dark')
+    } else if (savedTheme === 'system') {
+      const isDark = window.matchMedia('(prefers-color-scheme: dark)').matches
+      document.documentElement.classList.toggle('dark', isDark)
+    }
+  }, [])
   const [importing, setImporting] = useState(false)
   const [importError, setImportError] = useState<string | null>(null)
   const [generating, setGenerating] = useState(false)
@@ -548,16 +575,37 @@ export function AppShell({ onLogout }: Props) {
             <Bot className="h-4 w-4" /> Agente de IA
           </button>
           <button
-            onClick={() => setShowImport(true)}
-            className="flex w-full items-center gap-2.5 rounded-lg px-3 py-2.5 text-sm font-medium text-white/70 transition-colors hover:bg-white/10 hover:text-white"
+            onClick={() => {
+              setView('settings')
+              navigate('/settings')
+            }}
+            className={`flex w-full items-center gap-2.5 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors ${
+              view === 'settings'
+                ? 'bg-white/15 text-white'
+                : 'text-white/70 hover:bg-white/10 hover:text-white'
+            }`}
           >
             <Settings className="h-4 w-4" /> Configurações
           </button>
         </nav>
         <div className="border-t border-white/10 p-3">
-          <div className="flex items-center gap-2.5">
-            <div className="flex h-8 w-8 items-center justify-center rounded-full bg-[#0F766E] text-xs font-bold">
-              {pb.authStore.record?.name?.charAt(0)?.toUpperCase() || 'H'}
+          <div
+            onClick={() => {
+              setView('settings')
+              navigate('/settings')
+            }}
+            className="flex cursor-pointer items-center gap-2.5 rounded-lg p-1 transition-colors hover:bg-white/5"
+          >
+            <div className="flex h-8 w-8 items-center justify-center overflow-hidden rounded-full bg-[#0F766E] text-xs font-bold">
+              {pb.authStore.record && pb.authStore.record.avatar ? (
+                <img
+                  src={pb.files.getUrl(pb.authStore.record, pb.authStore.record.avatar)}
+                  alt="Avatar"
+                  className="h-full w-full object-cover"
+                />
+              ) : (
+                pb.authStore.record?.name?.charAt(0)?.toUpperCase() || 'H'
+              )}
             </div>
             <div className="min-w-0 flex-1">
               <p className="truncate text-xs font-medium">
@@ -566,7 +614,10 @@ export function AppShell({ onLogout }: Props) {
               <p className="truncate text-[10px] text-white/50">{pb.authStore.record?.email}</p>
             </div>
             <button
-              onClick={onLogout}
+              onClick={(e) => {
+                e.stopPropagation()
+                onLogout()
+              }}
               title="Sair"
               className="rounded-lg p-1.5 text-white/50 hover:bg-white/10 hover:text-white"
             >
@@ -628,7 +679,14 @@ export function AppShell({ onLogout }: Props) {
         </header>
 
         <main className="min-h-0 flex-1 overflow-y-auto">
-          {!workbook ? (
+          {view === 'settings' ? (
+            <SettingsView
+              onBack={() => {
+                setView('sheet')
+                navigate('/')
+              }}
+            />
+          ) : !workbook ? (
             <div className="mx-auto max-w-2xl px-6 py-10">
               <h1 className="mb-6 text-center text-2xl font-bold tracking-tight text-[#172554]">
                 Bem-vindo à HARMOZA 👋

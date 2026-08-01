@@ -3,8 +3,16 @@ import pb from '@/lib/pocketbase/client'
 import { Login } from './Login'
 import { AppShell } from '@/components/AppShell'
 
-export default function Index() {
+import { useLocation } from 'react-router-dom'
+
+interface IndexProps {
+  initialView?: 'sheet' | 'dashboard' | 'settings'
+}
+
+export default function Index({ initialView }: IndexProps) {
+  const location = useLocation()
   const [authed, setAuthed] = useState(pb.authStore.isValid)
+  const activeView = initialView || (location.pathname === '/settings' ? 'settings' : undefined)
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
@@ -38,5 +46,5 @@ export default function Index() {
     return <Login />
   }
 
-  return <AppShell onLogout={() => pb.authStore.clear()} />
+  return <AppShell initialView={activeView} onLogout={() => pb.authStore.clear()} />
 }

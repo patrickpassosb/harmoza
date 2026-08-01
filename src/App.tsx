@@ -13,6 +13,7 @@ const App = () => (
       <Sonner />
       <Routes>
         <Route path="/" element={<Index />} />
+        <Route path="/settings" element={<Index initialView="settings" />} />
         <Route path="*" element={<NotFound />} />
       </Routes>
     </TooltipProvider>

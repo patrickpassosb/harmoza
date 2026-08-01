@@ -1,6 +1,7 @@
 // HARMOZA — cabeçalho principal
 import { Bot, Table2, LayoutDashboard } from 'lucide-react'
 import { Button } from '@/components/ui/button'
+import { ExportButton } from '@/components/ExportButton'
 import { useHarmoza } from '@/lib/store'
 import pb from '@/lib/pocketbase/client'
 
@@ -62,6 +63,7 @@ export function Header() {
             </Button>
           </div>
         )}
+        <ExportButton />
         <Button className="gap-1.5" size="sm" onClick={() => setAgentOpen(true)}>
           <Bot className="h-4 w-4" />
           <span className="hidden sm:inline">Agente</span>

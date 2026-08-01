@@ -1,8 +1,5 @@
-// HARMOZA — planilha de demonstração (PME distribuidora de alimentos)
-// Geração determinística — 60 registros em Jan–Mai/2025, 12 colunas.
 import type { Workbook, SheetData } from './types'
-
-const PRODUTOS: [string, string, number, number][] = [
+const P: [string, string, number, number][] = [
   ['Café Torrado 500g', 'Mercearia', 18.9, 12.5],
   ['Arroz 5kg', 'Mercearia', 24.9, 18.2],
   ['Feijão 1kg', 'Mercearia', 8.4, 5.9],
@@ -20,8 +17,7 @@ const PRODUTOS: [string, string, number, number][] = [
   ['Sabonete 90g', 'Higiene', 3.2, 2.0],
   ['Shampoo 350ml', 'Higiene', 16.9, 11.8],
 ]
-
-const CLIENTES = [
+const CL = [
   'Mercadinho Bom Preço',
   'Supermercado Vila Nova',
   'Empório Central',
@@ -31,7 +27,7 @@ const CLIENTES = [
   'Lanchonete do Zé',
   'Mercado São José',
 ]
-const VENDEDORES = [
+const V = [
   'Ana Paula',
   'Carlos Mendes',
   'Fernanda Lima',
@@ -39,9 +35,8 @@ const VENDEDORES = [
   'Mariana Costa',
   'Roberto Alves',
 ]
-const REGIOES = ['Sul', 'Sudeste', 'Centro-Oeste', 'Nordeste', 'Norte']
-const STATUS = ['Entregue', 'Em trânsito', 'Pendente', 'Entregue', 'Entregue', 'Cancelado']
-
+const R = ['Sul', 'Sudeste', 'Centro-Oeste', 'Nordeste', 'Norte']
+const ST = ['Entregue', 'Em trânsito', 'Pendente', 'Entregue', 'Entregue', 'Cancelado']
 function buildDemoSheet(): SheetData {
   const columns = [
     { name: 'Data', type: 'date' as const },
@@ -57,7 +52,6 @@ function buildDemoSheet(): SheetData {
     { name: 'Região', type: 'text' as const },
     { name: 'Status do Pedido', type: 'text' as const },
   ]
-
   const rows: (string | number | null)[][] = []
   const meses: [string, number[]][] = [
     ['2025-01', [5, 12, 19, 26]],
@@ -71,33 +65,30 @@ function buildDemoSheet(): SheetData {
     for (const dia of dias) {
       for (let k = 0; k < 3; k++) {
         if (n >= 60) break
-        const [produto, categoria, preco, custo] = PRODUTOS[n % PRODUTOS.length]
-        const quantidade = 8 + ((n * 7) % 60)
-        const receita = Math.round(quantidade * preco * 100) / 100
-        const custoTotal = Math.round(quantidade * custo * 100) / 100
-        const lucro = Math.round((receita - custoTotal) * 100) / 100
+        const [produto, categoria, preco, custo] = P[n % P.length]
+        const qtd = 8 + ((n * 7) % 60)
+        const receita = Math.round(qtd * preco * 100) / 100
+        const custoT = Math.round(qtd * custo * 100) / 100
         rows.push([
           `${mes}-${String(dia).padStart(2, '0')}`,
           produto,
           categoria,
-          CLIENTES[(n * 3) % CLIENTES.length],
-          quantidade,
+          CL[(n * 3) % CL.length],
+          qtd,
           preco,
           receita,
-          custoTotal,
-          lucro,
-          VENDEDORES[n % VENDEDORES.length],
-          REGIOES[n % REGIOES.length],
-          STATUS[n % STATUS.length],
+          custoT,
+          Math.round((receita - custoT) * 100) / 100,
+          V[n % V.length],
+          R[n % R.length],
+          ST[n % ST.length],
         ])
         n++
       }
     }
   }
-
   return { id: 'demo-vendas', name: 'Vendas 2025', columns, rows }
 }
-
 export function demoWorkbook(): Workbook {
   return {
     id: 'demo-workbook',

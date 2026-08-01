@@ -1,6 +1,6 @@
-// HARMOZA — tipos centrais da aplicação
-// (compatível com harmoza.ts + componentes)
+// HARMOZA — tipos centrais da aplicação (compatível com AppShell/analyze/excel)
 
+export type CellValue = string | number | null
 export type ColumnType = 'text' | 'number' | 'currency' | 'percent' | 'date'
 
 export interface ColumnMeta {
@@ -8,39 +8,28 @@ export interface ColumnMeta {
   type: ColumnType
 }
 
-export type CellValue = string | number | null
-
-export interface SheetData {
+export interface Sheet {
   id: string
   name: string
-  columns: ColumnMeta[]
+  columns: string[] // nomes das colunas
   rows: CellValue[][]
-}
-
-export interface Workbook {
-  id: string
-  fileName: string
-  sheets: SheetData[]
-  activeSheetId: string
+  columnTypes?: Record<string, string> // nome da coluna -> tipo detectado
 }
 
 export type DashKind = 'kpi' | 'bar' | 'line' | 'area' | 'pie' | 'ranking' | 'table'
 
 export interface DashComponent {
   id: string
-  kind: DashKind
-  type?: DashKind
+  type: DashKind
   title: string
-  subtitle?: string
-  // dados agregados prontos para render
-  labels?: string[]
-  values?: number[]
-  rows?: { label: string; value: number }[]
   columnX?: string
   columnY?: string
   aggregation?: 'sum' | 'avg' | 'count'
   format?: 'currency' | 'number' | 'percent'
-  config: Record<string, unknown>
+  labels?: string[]
+  values?: number[]
+  rows?: { label: string; value: number }[]
+  config?: Record<string, unknown>
 }
 
 export interface DashboardLayoutItem {
@@ -51,43 +40,43 @@ export interface DashboardLayoutItem {
   h: number
 }
 
-export type ViewMode = 'sheet' | 'dashboard'
-
-export type ImportState = 'idle' | 'loading' | 'success' | 'error'
-
-export interface AgentMessage {
-  id: string
-  role: 'user' | 'assistant'
-  content: string
-  action?: string
-  created: number
+export interface Analysis {
+  totalRevenue?: number
+  totalProfit?: number
+  avgTicket?: number
+  orderCount?: number
+  monthlyRevenue?: { label: string; value: number }[]
+  categoryRevenue?: { label: string; value: number }[]
+  topProducts?: { label: string; value: number }[]
+  topClients?: { label: string; value: number }[]
+  regionRevenue?: { label: string; value: number }[]
+  statusCounts?: { label: string; value: number }[]
+  hasRevenue: boolean
+  hasProfit: boolean
+  hasDate: boolean
 }
 
-export type AgentStatus =
-  | 'idle'
-  | 'listening'
-  | 'processing'
-  | 'executing'
-  | 'done'
-  | 'unclear'
-  | 'error'
-
-// --- compat com harmoza.ts ---
-export interface Sheet {
-  name: string
-  columns: ColumnMeta[]
-  rows: Record<string, unknown>[]
+export interface WorkBookState {
+  fileName: string
+  sheets: Sheet[]
+  activeSheetId: string
+  dashboard: DashComponent[]
+  layout: DashboardLayoutItem[]
+  analysis?: Analysis
 }
 
-export interface AgentState {
-  open: boolean
-  messages: ChatMessage[]
-  status: AgentStatus
+export interface AgentResult {
+  reply: string
+  action: string | null
+  params: Record<string, unknown>
 }
 
 export interface ChatMessage {
   id: string
   role: 'user' | 'assistant'
   content: string
+  action?: string
   createdAt: number
 }
+
+export type ViewMode = 'sheet' | 'dashboard'

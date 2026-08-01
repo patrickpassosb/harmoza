@@ -1,71 +1,63 @@
 // HARMOZA — estados visuais (vazio / carregando / erro / dashboard gerando)
+import type { ReactNode } from 'react'
 import { FileSpreadsheet, Loader2, Sparkles, AlertTriangle } from 'lucide-react'
-import { HarmozaLogo } from './Logo'
 
-export function EmptyState() {
+export function EmptyState({
+  icon,
+  title,
+  description,
+  action,
+}: {
+  icon?: ReactNode
+  title: string
+  description: string
+  action?: ReactNode
+}) {
   return (
-    <div className="flex min-h-[60vh] flex-col items-center justify-center px-4 text-center">
+    <div className="flex min-h-[50vh] flex-col items-center justify-center px-4 text-center">
       <div className="mb-6 flex h-16 w-16 items-center justify-center rounded-3xl bg-[#172554]/5">
-        <HarmozaLogo size={44} showName={false} />
+        {icon ?? <FileSpreadsheet className="h-8 w-8 text-[#0F766E]" />}
       </div>
-      <h2 className="text-2xl font-bold tracking-tight text-[#172554]">
-        Comece importando sua planilha
-      </h2>
-      <p className="mt-2 max-w-md text-sm text-muted-foreground">
-        Arraste um arquivo <span className="font-medium text-[#172554]">.xlsx</span> ou use a
-        planilha de demonstração. A HARMOZA lê suas abas, entende os dados e monta um dashboard
-        automático — sem configuração.
-      </p>
+      <h2 className="text-2xl font-bold tracking-tight text-[#172554]">{title}</h2>
+      <p className="mt-2 max-w-md text-sm text-muted-foreground">{description}</p>
+      {action && <div className="mt-6">{action}</div>}
     </div>
   )
 }
 
 export function LoadingState({ label = 'Importando planilha…' }: { label?: string }) {
   return (
-    <div className="flex min-h-[50vh] flex-col items-center justify-center gap-3 text-center">
-      <Loader2 className="h-8 w-8 animate-spin text-[#0F766E]" />
-      <p className="text-sm font-medium text-muted-foreground">{label}</p>
+    <div className="flex min-h-[50vh] flex-col items-center justify-center px-4 text-center">
+      <Loader2 className="mb-4 h-8 w-8 animate-spin text-[#0F766E]" />
+      <p className="text-sm font-medium text-[#172554]">{label}</p>
     </div>
   )
 }
 
-export function ErrorState({ message }: { message: string }) {
+export function ErrorState({ message, onRetry }: { message: string; onRetry?: () => void }) {
   return (
-    <div className="mx-auto mt-16 flex max-w-md flex-col items-center gap-3 rounded-2xl border border-red-200 bg-red-50 p-8 text-center">
-      <AlertTriangle className="h-8 w-8 text-red-500" />
-      <h3 className="text-base font-semibold text-red-700">Não foi possível processar o arquivo</h3>
-      <p className="text-sm text-red-600/80">{message}</p>
-      <p className="text-xs text-red-500/70">
-        Verifique se o arquivo é um .xlsx válido e tente novamente.
-      </p>
+    <div className="flex min-h-[40vh] flex-col items-center justify-center px-4 text-center">
+      <AlertTriangle className="mb-4 h-8 w-8 text-red-500" />
+      <p className="text-sm font-medium text-red-600">{message}</p>
+      {onRetry && (
+        <button
+          onClick={onRetry}
+          className="mt-4 rounded-lg bg-[#172554] px-4 py-2 text-sm font-semibold text-white hover:bg-[#172554]/90"
+        >
+          Tentar novamente
+        </button>
+      )}
     </div>
   )
 }
 
 export function DashboardGenerating() {
   return (
-    <div className="flex min-h-[40vh] flex-col items-center justify-center gap-3 text-center">
-      <div className="relative">
-        <div className="absolute inset-0 animate-ping rounded-full bg-[#0F766E]/20" />
-        <div className="relative flex h-14 w-14 items-center justify-center rounded-2xl bg-[#0F766E] text-white">
-          <Sparkles className="h-7 w-7" />
-        </div>
-      </div>
+    <div className="flex min-h-[40vh] flex-col items-center justify-center px-4 text-center">
+      <Sparkles className="mb-4 h-8 w-8 animate-pulse text-[#D97706]" />
       <p className="text-sm font-medium text-[#172554]">Gerando dashboard inteligente…</p>
-      <p className="text-xs text-muted-foreground">
-        Analisando colunas e calculando indicadores com os dados reais.
-      </p>
-    </div>
-  )
-}
-
-export function NoDataHint() {
-  return (
-    <div className="mx-auto mt-16 flex max-w-md flex-col items-center gap-3 rounded-2xl border border-dashed border-border bg-white/60 p-8 text-center">
-      <FileSpreadsheet className="h-8 w-8 text-muted-foreground/50" />
-      <h3 className="text-base font-semibold text-[#172554]">Nenhuma aba com dados</h3>
-      <p className="text-sm text-muted-foreground">
-        Importe uma planilha ou crie uma nova aba para começar a analisar.
+      <p className="mt-1 text-xs text-muted-foreground">
+        Analisando colunas e criando os indicadores mais relevantes
       </p>
     </div>
   )

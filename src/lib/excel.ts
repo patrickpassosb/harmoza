@@ -1,18 +1,16 @@
 // HARMOZA — leitura de arquivos .xlsx com SheetJS (100% no navegador)
-// (mantém compat: exporta parseWorkbook + ParsedWorkbook usados pelo UploadArea)
+// Interface compatível com AppShell/UploadArea: parseWorkbook → { fileName, sheets }
 import * as XLSX from 'xlsx'
-import type { CellValue, ColumnMeta, ColumnType, SheetData, Workbook } from './types'
+import type { CellValue, Sheet } from './types'
 
 export interface ParsedWorkbook {
-  workbook: Workbook
-}
-
-function normalizeHeader(raw: unknown): string {
-  return String(raw ?? '').trim()
+  id?: string
+  fileName: string
+  sheets: Sheet[]
 }
 
 // Detecta o tipo de uma coluna a partir dos valores (amostra de até 60 células)
-function detectColumnType(values: unknown[]): ColumnType {
+function detectColumnType(values: unknown[]): string {
   let text = 0
   let number = 0
   let currency = 0
@@ -32,10 +30,7 @@ function detectColumnType(values: unknown[]): ColumnType {
       continue
     }
     const s = String(v).trim()
-    if (
-      /^[-+]?\d{1,3}(\.\d{3})*,\d{2}\s*(R\$|USD|\$)?$/i.test(s) ||
-      /^\s*(R\$|USD|\$)\s?[\d.,]+\s*$/i.test(s)
-    ) {
+    if (/^\s*(R\$|USD|\$)\s?[\d.,]+\s*$/i.test(s)) {
       currency++
       continue
     }
@@ -43,11 +38,7 @@ function detectColumnType(values: unknown[]): ColumnType {
       percent++
       continue
     }
-    if (
-      /^\d{1,2}\/\d{1,2}\/\d{2,4}$/.test(s) ||
-      /^\d{4}-\d{2}-\d{2}$/.test(s) ||
-      /^\d{1,2}-\d{1,2}-\d{2,4}$/.test(s)
-    ) {
+    if (/^\d{1,2}\/\d{1,2}\/\d{2,4}$/.test(s) || /^\d{4}-\d{2}-\d{2}$/.test(s)) {
       date++
       continue
     }
@@ -71,15 +62,15 @@ function parseCell(v: unknown): CellValue {
   return s
 }
 
-function sheetToSheetData(sheetName: string, ws: XLSX.WorkSheet): SheetData {
+function sheetToSheet(sheetName: string, ws: XLSX.WorkSheet): Sheet {
   const matrix = XLSX.utils.sheet_to_json<unknown[]>(ws, { header: 1, defval: null, raw: true })
   const nonEmpty = matrix.filter((row) =>
     row.some((c) => c !== null && c !== undefined && String(c).trim() !== ''),
   )
   if (nonEmpty.length === 0)
-    return { id: `s-${Date.now()}`, name: sheetName, columns: [], rows: [] }
+    return { id: `s-${Date.now()}`, name: sheetName, columns: [], rows: [], columnTypes: {} }
 
-  const headerRow = nonEmpty[0].map((h) => normalizeHeader(h))
+  const headerRow = nonEmpty[0].map((h) => String(h ?? '').trim())
   const hasHeader = headerRow.some((h) => h !== '')
   const headers = hasHeader
     ? headerRow
@@ -87,36 +78,36 @@ function sheetToSheetData(sheetName: string, ws: XLSX.WorkSheet): SheetData {
   const dataRows = hasHeader ? nonEmpty.slice(1) : nonEmpty
 
   const nCols = headers.length
-  const columns: ColumnMeta[] = []
+  const columnTypes: Record<string, string> = {}
   for (let c = 0; c < nCols; c++) {
     const values = dataRows.map((r) => (c < r.length ? r[c] : null))
-    columns.push({ name: headers[c] || `Coluna ${c + 1}`, type: detectColumnType(values) })
+    columnTypes[headers[c]] = detectColumnType(values)
   }
   const rows: CellValue[][] = dataRows.map((r) => {
     const out: CellValue[] = []
     for (let c = 0; c < nCols; c++) out.push(c < r.length ? parseCell(r[c]) : null)
     return out
   })
-  return { id: `s-${Date.now()}-${sheetName}`, name: sheetName, columns, rows }
+  return {
+    id: `s-${Date.now()}-${sheetName}`,
+    name: sheetName,
+    columns: headers,
+    rows,
+    columnTypes,
+  }
 }
 
-// Lê um File .xlsx e produz um Workbook
+// Lê um File .xlsx e produz um workbook (abas + linhas)
 export async function parseWorkbook(file: File): Promise<ParsedWorkbook> {
   const buf = await file.arrayBuffer()
   const wb = XLSX.read(buf, { type: 'array', cellDates: true })
-  const sheets: SheetData[] = wb.SheetNames.map((name) =>
-    sheetToSheetData(name, wb.Sheets[name]),
-  ).filter((s) => s.columns.length > 0 && s.rows.length > 0)
+  const sheets: Sheet[] = wb.SheetNames.map((name) => sheetToSheet(name, wb.Sheets[name])).filter(
+    (s) => s.columns.length > 0 && s.rows.length > 0,
+  )
   if (sheets.length === 0) {
     throw new Error(
       'Nenhuma aba com dados foi encontrada no arquivo. Verifique se a planilha contém linhas e colunas preenchidas.',
     )
   }
-  const workbook: Workbook = {
-    id: `wb-${Date.now()}`,
-    fileName: file.name,
-    sheets,
-    activeSheetId: sheets[0].id,
-  }
-  return { workbook }
+  return { id: `wb-${Date.now()}`, fileName: file.name, sheets }
 }

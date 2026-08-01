@@ -1,6 +1,6 @@
 // HARMOZA — área de upload de planilha (.xlsx) com estado
 import { useCallback, useRef, useState } from 'react'
-import { useNavigate } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { UploadCloud, Loader2, FileSpreadsheet, AlertTriangle, CheckCircle2 } from 'lucide-react'
 import { useHarmoza } from '@/lib/store'
 

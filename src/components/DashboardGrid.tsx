@@ -2,3 +2,4 @@
 // Mantém compatibilidade com importadores antigos do esqueleto.
 export { DashGrid as default } from './DashGrid'
 export { DashGrid } from './DashGrid'
+export { DashGrid as DashboardGrid } from './DashGrid'

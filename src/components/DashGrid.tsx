@@ -15,7 +15,7 @@ import { useHarmoza } from '@/lib/store'
 
 const Grid = WidthProvider(GridLayout)
 
-export function DashGrid() {
+export function DashGrid(_props?: any) {
   const {
     components,
     layout,

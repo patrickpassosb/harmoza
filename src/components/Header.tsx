@@ -1,5 +1,5 @@
 // HARMOZA — cabeçalho principal
-import { Bot, Table2, LayoutDashboard, Settings, LogOut } from 'lucide-react'
+import { Table2, LayoutDashboard, Settings, LogOut } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { ExportButton } from '@/components/ExportButton'
 import {
@@ -21,7 +21,6 @@ export function Header() {
     activeSheet,
     view,
     setView,
-    setAgentOpen,
     importState,
     dashReady,
     runAutoDashboard,
@@ -78,10 +77,6 @@ export function Header() {
           </div>
         )}
         <ExportButton />
-        <Button className="gap-1.5" size="sm" onClick={() => setAgentOpen(true)}>
-          <Bot className="h-4 w-4" />
-          <span className="hidden sm:inline">Agente</span>
-        </Button>
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <button className="flex h-8 w-8 items-center justify-center rounded-full bg-primary text-xs font-bold text-primary-foreground transition-opacity hover:opacity-80">

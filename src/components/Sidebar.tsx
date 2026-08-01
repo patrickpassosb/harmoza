@@ -1,6 +1,6 @@
 import { useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Upload, Bot, FileSpreadsheet, Plus, Trash2, Loader2 } from 'lucide-react'
+import { Upload, Bot, FileSpreadsheet, Trash2, Loader2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import {
   Dialog,
@@ -13,15 +13,8 @@ import { HarmozaLogo } from './Logo'
 import { useHarmoza } from '@/lib/store'
 
 export function Sidebar() {
-  const {
-    importFile,
-    loadDemo,
-    workbooks,
-    activeWorkbookId,
-    switchWorkbook,
-    setAgentOpen,
-    deleteWorkbook,
-  } = useHarmoza()
+  const { importFile, workbooks, activeWorkbookId, switchWorkbook, setAgentOpen, deleteWorkbook } =
+    useHarmoza()
   const inputRef = useRef<HTMLInputElement>(null)
   const navigate = useNavigate()
   const [deleteTarget, setDeleteTarget] = useState<{ id: string; fileName: string } | null>(null)
@@ -98,16 +91,6 @@ export function Sidebar() {
         </div>
 
         <div className="mt-3 pt-3 border-t border-white/10 flex flex-col gap-2">
-          <button
-            className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-xs text-white/70 transition-colors hover:bg-white/10 hover:text-white"
-            onClick={() => {
-              void loadDemo()
-              navigate('/')
-            }}
-          >
-            <Plus className="h-3.5 w-3.5" /> Carregar demonstração
-          </button>
-
           <Button
             className="w-full justify-start gap-2 bg-white/10 text-white hover:bg-white/20 text-xs font-medium"
             onClick={() => inputRef.current?.click()}

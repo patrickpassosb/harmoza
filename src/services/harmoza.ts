@@ -1,52 +1,55 @@
-/* HARMOZA — Serviços de backend (rotas /backend/v1) */
-
+// HARMOZA — serviços: comunicação com o backend (agente + demo)
 import pb from '@/lib/pocketbase/client'
-import type { Workbook } from '@/lib/harmoza'
+import type { AgentResult, WorkBookState } from '@/lib/harmoza'
 
-export interface AgentResponse {
-  reply: string
-  action: string | null
-  params: Record<string, unknown>
+export interface AgentRequest {
+  question: string
+  data?: Record<string, unknown>
 }
 
+// Chama o agente no backend (Skip Cloud hook)
 export async function askAgent(
   question: string,
-  data: { sheets: unknown[]; dashboard: unknown[] },
-): Promise<AgentResponse> {
-  const res = await pb.send<AgentResponse>('/backend/v1/harmoza/agent', {
-    method: 'POST',
-    body: JSON.stringify({ question, data }),
-  })
-  return res
-}
-
-export async function fetchDemoWorkbook(): Promise<{ workbook: Workbook; workbookId: string }> {
-  const res = await pb.send<{ workbook: Workbook; workbookId: string }>(
-    '/backend/v1/harmoza/demo',
-    {
-      method: 'GET',
-    },
-  )
-  return res
-}
-
-export async function listWorkbooks(): Promise<{ id: string; name: string; fileName?: string }[]> {
-  const res = await pb.collection('workbooks').getList(1, 50, { sort: '-created' })
-  return res.items.map((it) => ({ id: it.id, name: it.name, fileName: it.fileName }))
-}
-
-export async function saveWorkbook(workbook: Workbook): Promise<void> {
-  const existing = await pb.collection('workbooks').getList(1, 1, {
-    filter: pb.filter('name = {:name}', { name: workbook.name }),
-  })
-  const data = {
-    name: workbook.name,
-    fileName: workbook.fileName,
-    rawJson: JSON.stringify(workbook),
+  data?: Record<string, unknown>,
+): Promise<AgentResult> {
+  try {
+    const res = await pb.send('/backend/v1/harmoza/agent', {
+      method: 'POST',
+      body: JSON.stringify({ question, data } satisfies AgentRequest),
+    })
+    const result = res as Partial<AgentResult>
+    return {
+      reply: typeof result.reply === 'string' ? result.reply : '',
+      action: typeof result.action === 'string' && result.action ? result.action : null,
+      params:
+        result.params && typeof result.params === 'object'
+          ? (result.params as Record<string, unknown>)
+          : {},
+    }
+  } catch (err) {
+    // fallback: resposta local amigável (o app segue funcionando sem backend)
+    return {
+      reply: 'Não consegui falar com o agente agora. Verifique sua conexão e tente de novo.',
+      action: null,
+      params: {},
+    }
   }
-  if (existing.items.length > 0) {
-    await pb.collection('workbooks').update(existing.items[0].id, data)
-  } else {
-    await pb.collection('workbooks').create(data)
+}
+
+// Busca a planilha de demonstração (gera localmente; opcionalmente persiste no backend)
+export async function fetchDemoWorkbook(): Promise<{ workbook?: WorkBookState } | null> {
+  // A demo é gerada no cliente (buildDemoWorkbook) — este endpoint é um fallback
+  return null
+}
+
+export async function saveWorkbookRemote(wb: WorkBookState): Promise<void> {
+  try {
+    await pb.collection('workbooks').create({
+      name: wb.fileName,
+      fileName: wb.fileName,
+      rawJson: JSON.stringify(wb),
+    })
+  } catch {
+    // persistência remota é opcional — segue local
   }
 }

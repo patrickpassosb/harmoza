@@ -39,13 +39,3 @@ export function fmtCell(v: unknown, type?: string): string {
   if (type === 'date' && /^\d{4}-\d{2}-\d{2}/.test(s)) return fmtDate(s)
   return s
 }
-
-// Converte uma string ISO (aaaa-mm-dd) para rótulo amigável (mmm/aa)
-export function monthLabel(iso: string): string {
-  const d = new Date(iso + 'T00:00:00')
-  if (Number.isNaN(d.getTime())) return iso
-  return d
-    .toLocaleDateString('pt-BR', { month: 'short', year: '2-digit' })
-    .replace('.', '')
-    .replace(' ', '/')
-}

@@ -1,7 +1,7 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
-  <!-- HARMOZA logo mark: 4 interlocking rounded pieces (harmonia/composição) -->
-  <rect x="6" y="6" width="24" height="24" rx="7" fill="#172554"/>
-  <rect x="34" y="6" width="24" height="24" rx="7" fill="#0F766E"/>
-  <rect x="6" y="34" width="24" height="24" rx="7" fill="#D97706"/>
-  <rect x="34" y="34" width="24" height="24" rx="7" fill="#6D28D9"/>
+<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 64 64" fill="none">
+  <rect x="2" y="2" width="60" height="60" rx="14" fill="#172554"/>
+  <path d="M14 42 L26 22 L32 32 L38 22 L50 42 H38 L32 32 L26 42 Z" fill="#0F766E"/>
+  <circle cx="32" cy="18" r="6" fill="#D97706"/>
+  <circle cx="20" cy="46" r="5" fill="#6D28D9"/>
+  <circle cx="44" cy="46" r="5" fill="#F59E0B"/>
 </svg>

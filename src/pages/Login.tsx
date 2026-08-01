@@ -1,18 +1,16 @@
-/* HARMOZA — Login / Cadastro com conta de teste visível */
-
+/* HARMOZA — Login / Cadastro com conta de demonstração visível */
 import { useState } from 'react'
 import { Loader2, Sparkles, KeyRound } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { Logo } from '@/components/Logo'
-import { useAuth } from '@/hooks/use-auth'
+import { HarmozaLogo } from '@/components/Logo'
+import pb from '@/lib/pocketbase/client'
 
 const DEMO_EMAIL = 'demo@harmoza.com.br'
 const DEMO_PASSWORD = 'demo1234'
 
-export default function Login() {
-  const { signIn, signUp, loading } = useAuth()
+export default function Login({ onAuthed }: { onAuthed?: () => void }) {
   const [mode, setMode] = useState<'login' | 'signup'>('login')
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
@@ -26,12 +24,16 @@ export default function Login() {
     setBusy(true)
     try {
       if (mode === 'login') {
-        await signIn(email || DEMO_EMAIL, password || DEMO_PASSWORD)
+        await pb
+          .collection('users')
+          .authWithPassword(email || DEMO_EMAIL, password || DEMO_PASSWORD)
       } else {
-        await signUp(name, email, password)
+        await pb.collection('users').create({ name, email, password, passwordConfirm: password })
+        await pb.collection('users').authWithPassword(email.trim(), password)
       }
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Falha na autenticação.')
+      onAuthed?.()
+    } catch {
+      setError('Não foi possível entrar. Verifique e-mail e senha, ou cadastre-se.')
     } finally {
       setBusy(false)
     }
@@ -41,7 +43,7 @@ export default function Login() {
     <div className="flex min-h-screen items-center justify-center bg-background p-4">
       <div className="w-full max-w-md">
         <div className="mb-8 flex flex-col items-center text-center">
-          <Logo />
+          <HarmozaLogo size={56} />
           <h1 className="mt-6 text-2xl font-bold tracking-tight text-foreground">
             {mode === 'login' ? 'Bem-vindo de volta' : 'Crie sua conta'}
           </h1>
@@ -51,7 +53,6 @@ export default function Login() {
         </div>
 
         <div className="rounded-2xl border border-border bg-card p-6 shadow-elevation">
-          {/* Conta demo visível */}
           <button
             type="button"
             onClick={() => {
@@ -64,7 +65,7 @@ export default function Login() {
             className="mb-4 flex w-full items-center gap-3 rounded-xl border border-[#D97706]/40 bg-[#D97706]/10 p-3 text-left transition-colors hover:bg-[#D97706]/15"
           >
             <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-[#D97706] text-white">
-              <Sparkles className="h-4.5 w-4.5" />
+              <Sparkles className="h-4 w-4" />
             </span>
             <span className="flex-1">
               <span className="block text-sm font-semibold text-foreground">
@@ -123,8 +124,8 @@ export default function Login() {
 
             {error && <p className="text-sm text-red-600">{error}</p>}
 
-            <Button type="submit" className="w-full" disabled={busy || loading}>
-              {busy || loading ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
+            <Button type="submit" className="w-full" disabled={busy}>
+              {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
               {mode === 'login' ? 'Entrar' : 'Criar conta'}
             </Button>
           </form>

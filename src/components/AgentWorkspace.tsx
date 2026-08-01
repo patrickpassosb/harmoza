@@ -15,7 +15,6 @@ import {
   RefreshCw,
   Trash2,
   Sparkles,
-  FileSpreadsheet,
   BarChart3,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
@@ -41,27 +40,8 @@ const QUICK_PROMPTS = [
 ]
 
 export function AgentWorkspace() {
-  const {
-    workbook,
-    workbooks,
-    activeSheet,
-    agentTargetWorkbookId,
-    agentMessages,
-    agentStatus,
-    agentError,
-    sendAgentText,
-    retryAgent,
-    clearAgent,
-  } = useHarmoza()
-
-  const indicatorWorkbook = agentTargetWorkbookId
-    ? (workbooks.find((w) => w.id === agentTargetWorkbookId) ?? workbook)
-    : workbook
-  const indicatorSheet = indicatorWorkbook
-    ? (indicatorWorkbook.sheets.find((s) => s.id === indicatorWorkbook.activeSheetId) ??
-      indicatorWorkbook.sheets[0] ??
-      null)
-    : null
+  const { agentMessages, agentStatus, agentError, sendAgentText, retryAgent, clearAgent } =
+    useHarmoza()
 
   const [text, setText] = useState('')
   const [listening, setListening] = useState(false)
@@ -242,20 +222,6 @@ export function AgentWorkspace() {
             </p>
           </div>
         </div>
-
-        {indicatorWorkbook && (
-          <div className="hidden items-center gap-3 rounded-lg border border-amber-300 bg-amber-50 px-3.5 py-1.5 sm:flex dark:border-amber-700 dark:bg-amber-950/40">
-            <FileSpreadsheet className="h-4 w-4 text-amber-600 dark:text-amber-400" />
-            <div className="text-left text-xs">
-              <p className="font-semibold text-amber-900 dark:text-amber-100 truncate max-w-[180px]">
-                {indicatorWorkbook.fileName}
-              </p>
-              <p className="text-[11px] text-amber-700 dark:text-amber-300">
-                {indicatorSheet?.name || 'Aba ativa'}
-              </p>
-            </div>
-          </div>
-        )}
 
         {agentMessages.length > 0 && (
           <Button

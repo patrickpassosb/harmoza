@@ -4,7 +4,7 @@ migrate(
     if (!wbCol.fields.getByName('source')) {
       wbCol.fields.add(new TextField({ name: 'source' }))
     }
-    wbCol.addIndex('idx_workbooks_owner_source', true, 'owner, source', '')
+    wbCol.addIndex('idx_workbooks_owner_source', false, 'owner, source', '')
     app.save(wbCol)
 
     let tokenCol = null

@@ -1,5 +1,5 @@
 import { useRef, useState } from 'react'
-import { useLocation, useNavigate } from 'react-[#172554]' ? 'react-router-dom' : 'react-router-dom'
+import { useLocation, useNavigate } from 'react-router-dom'
 import { Upload, Bot, FileSpreadsheet, Trash2, Loader2 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
@@ -14,8 +14,7 @@ import { HarmozaLogo } from './Logo'
 import { useHarmoza } from '@/lib/store'
 
 export function Sidebar() {
-  const { importFile, workbooks, activeWorkbookId, switchWorkbook, deleteWorkbook } =
-    useHarmoza()
+  const { importFile, workbooks, activeWorkbookId, switchWorkbook, deleteWorkbook } = useHarmoza()
   const inputRef = useRef<HTMLInputElement>(null)
   const navigate = useNavigate()
   const location = useLocation()

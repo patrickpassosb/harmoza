@@ -3,7 +3,7 @@
    navegador (Chrome/Edge têm melhor suporte). */
 
 export interface SpeechListenCallbacks {
-  onResult: (text: string) => void
+  onResult: (text: string, isFinal: boolean) => void
   onError: (message: string) => void
   onEnd: () => void
 }
@@ -19,9 +19,30 @@ export function isSpeechSynthesisSupported(): boolean {
   return typeof window !== 'undefined' && 'speechSynthesis' in window
 }
 
-export function startListening(callbacks: SpeechListenCallbacks): (() => void) | null {
+function getRecognitionErrorMessage(error: string): string {
+  switch (error) {
+    case 'not-allowed':
+    case 'service-not-allowed':
+      return 'O navegador bloqueou o acesso ao microfone. Permite o acesso ao microfone ou desativa recursos de privacidade (ex: Shields do Brave) para esta página.'
+    case 'audio-capture':
+      return 'Nenhum microfone encontrado. Verifica se um microfone está ligado ao dispositivo.'
+    case 'network':
+      return 'Erro de rede no reconhecimento de voz. Verifica a tua ligação à internet.'
+    case 'no-speech':
+      return 'Nenhuma fala detectada. Tenta novamente e fala mais perto do microfone.'
+    case 'aborted':
+      return ''
+    default:
+      return `Erro no reconhecimento de voz: ${error}`
+  }
+}
+
+export function startListening(
+  callbacks: SpeechListenCallbacks,
+  options?: { interim?: boolean },
+): (() => void) | null {
   if (!isSpeechSupported()) {
-    callbacks.onError('Seu navegador não suporta reconhecimento de voz. Use Chrome ou Edge.')
+    callbacks.onError('O teu navegador não suporta reconhecimento de voz. Usa Chrome ou Edge.')
     return null
   }
   const SR =
@@ -29,22 +50,35 @@ export function startListening(callbacks: SpeechListenCallbacks): (() => void) |
     (window as unknown as Record<string, unknown>).webkitSpeechRecognition
   const recognition = new (SR as new () => SpeechRecognition)()
   recognition.lang = 'pt-BR'
-  recognition.interimResults = false
+  recognition.interimResults = options?.interim ?? false
   recognition.maxAlternatives = 1
+
   recognition.onresult = (event: SpeechRecognitionEvent) => {
-    const text = event.results?.[0]?.[0]?.transcript ?? ''
-    if (text.trim()) callbacks.onResult(text.trim())
+    let finalText = ''
+    let interimText = ''
+    for (let i = event.resultIndex; i < event.results.length; i++) {
+      const result = event.results[i]
+      if (result.isFinal) finalText += result[0].transcript
+      else interimText += result[0].transcript
+    }
+    if (finalText.trim()) callbacks.onResult(finalText.trim(), true)
+    if (interimText.trim()) callbacks.onResult(interimText.trim(), false)
   }
+
   recognition.onerror = (event: SpeechRecognitionErrorEvent) => {
-    callbacks.onError(event.error || 'Erro no reconhecimento de voz')
+    const msg = getRecognitionErrorMessage(event.error || 'unknown')
+    if (msg) callbacks.onError(msg)
   }
+
   recognition.onend = () => callbacks.onEnd()
+
   try {
     recognition.start()
   } catch {
-    callbacks.onError('Não foi possível iniciar o microfone.')
+    callbacks.onError('Não foi possível iniciar o microfone. Verifica as permissões do navegador.')
     return null
   }
+
   return () => {
     try {
       recognition.stop()
@@ -54,24 +88,72 @@ export function startListening(callbacks: SpeechListenCallbacks): (() => void) |
   }
 }
 
-export function speak(text: string, onEnd?: () => void): void {
-  if (!isSpeechSynthesisSupported()) return
+export function loadVoices(): Promise<SpeechSynthesisVoice[]> {
+  return new Promise((resolve) => {
+    if (!isSpeechSynthesisSupported()) {
+      resolve([])
+      return
+    }
+    const existing = window.speechSynthesis.getVoices()
+    if (existing.length > 0) {
+      resolve(existing)
+      return
+    }
+    let done = false
+    const finish = () => {
+      if (done) return
+      done = true
+      window.speechSynthesis.removeEventListener('voiceschanged', finish)
+      clearTimeout(timer)
+      resolve(window.speechSynthesis.getVoices())
+    }
+    window.speechSynthesis.addEventListener('voiceschanged', finish)
+    const timer = setTimeout(finish, 2000)
+  })
+}
+
+export function hasVoices(): boolean {
+  return isSpeechSynthesisSupported() && window.speechSynthesis.getVoices().length > 0
+}
+
+export function speak(text: string, onEnd?: () => void, onError?: (msg: string) => void): void {
+  if (!isSpeechSynthesisSupported()) {
+    onError?.('Síntese de voz não suportada neste navegador.')
+    onEnd?.()
+    return
+  }
   try {
     window.speechSynthesis.cancel()
+    const voices = window.speechSynthesis.getVoices()
     const utterance = new SpeechSynthesisUtterance(text)
     utterance.lang = 'pt-BR'
     utterance.rate = 1.05
     utterance.pitch = 1
-    const voices = window.speechSynthesis.getVoices()
     const ptVoice = voices.find((v) => v.lang.toLowerCase().startsWith('pt'))
     if (ptVoice) utterance.voice = ptVoice
-    if (onEnd) {
-      utterance.onend = () => onEnd()
-      utterance.onerror = () => onEnd()
+
+    let settled = false
+    const settle = (isError: boolean, msg?: string) => {
+      if (settled) return
+      settled = true
+      if (isError) onError?.(msg || 'Erro na síntese de voz')
+      onEnd?.()
     }
+
+    utterance.onend = () => settle(false)
+    utterance.onerror = (event) => {
+      const errType = event.error || ''
+      if (errType === 'canceled' || errType === 'interrupted') {
+        settle(false)
+      } else {
+        settle(true, errType || 'Erro na síntese de voz')
+      }
+    }
+
     window.speechSynthesis.speak(utterance)
-  } catch {
-    /* síntese indisponível — segue sem voz */
+  } catch (err) {
+    onError?.(err instanceof Error ? err.message : 'Falha na síntese de voz')
+    onEnd?.()
   }
 }
 

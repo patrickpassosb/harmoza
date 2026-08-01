@@ -2,8 +2,10 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import {
   X,
   Mic,
+  MicOff,
   Square,
   Volume2,
+  VolumeX,
   Send,
   Loader2,
   Bot,
@@ -19,6 +21,8 @@ import { useHarmoza } from '@/lib/store'
 import {
   speak as speakTTS,
   stopSpeaking,
+  startListening as startSpeechListening,
+  loadVoices,
   isSpeechSynthesisSupported,
   isSpeechSupported,
 } from '@/lib/speech'
@@ -30,12 +34,6 @@ const SUGGESTIONS = [
   'Crie um gráfico de vendas por região',
   'Qual região tem o melhor resultado?',
 ]
-
-function getRecognition(): any {
-  const w = window as any
-  const Ctor = w.SpeechRecognition || w.webkitSpeechRecognition
-  return Ctor ? new Ctor() : null
-}
 
 export function AgentPanel() {
   const {
@@ -52,21 +50,33 @@ export function AgentPanel() {
   const [interim, setInterim] = useState('')
   const [copiedId, setCopiedId] = useState<string | null>(null)
   const [playingId, setPlayingId] = useState<string | null>(null)
-  const recRef = useRef<any>(null)
+  const [voiceError, setVoiceError] = useState<string | null>(null)
+  const [voicesReady, setVoicesReady] = useState(false)
+  const [voicesAvailable, setVoicesAvailable] = useState(false)
+  const stopFnRef = useRef<(() => void) | null>(null)
   const scrollRef = useRef<HTMLDivElement>(null)
 
   const ttsSupported = isSpeechSynthesisSupported()
   const micSupported = isSpeechSupported()
+  const ttsDisabled = !ttsSupported || (voicesReady && !voicesAvailable)
+
+  useEffect(() => {
+    loadVoices().then((voices) => {
+      setVoicesReady(true)
+      setVoicesAvailable(voices.length > 0)
+    })
+  }, [])
 
   useEffect(() => {
     if (scrollRef.current) {
       scrollRef.current.scrollTop = scrollRef.current.scrollHeight
     }
-  }, [agentMessages, interim, agentStatus, agentError])
+  }, [agentMessages, interim, agentStatus, agentError, voiceError])
 
   useEffect(() => {
     if (!agentOpen) {
-      recRef.current?.abort()
+      stopFnRef.current?.()
+      stopFnRef.current = null
       setListening(false)
       stopSpeaking()
       setPlayingId(null)
@@ -74,44 +84,42 @@ export function AgentPanel() {
   }, [agentOpen])
 
   const stopListening = useCallback(() => {
-    recRef.current?.abort()
-    recRef.current = null
+    stopFnRef.current?.()
+    stopFnRef.current = null
     setListening(false)
     setInterim('')
   }, [])
 
   const startListening = useCallback(() => {
-    const rec = getRecognition()
-    if (!rec) return
-    rec.lang = 'pt-BR'
-    rec.continuous = false
-    rec.interimResults = true
-    rec.onresult = (e: any) => {
-      let final = ''
-      let inter = ''
-      for (let i = e.resultIndex; i < e.results.length; i++) {
-        const r = e.results[i]
-        if (r.isFinal) final += r[0].transcript
-        else inter += r[0].transcript
-      }
-      if (final) {
-        setText((t) => (t ? t + ' ' + final : final))
-        setInterim('')
-      } else {
-        setInterim(inter)
-      }
+    setVoiceError(null)
+    const stopFn = startSpeechListening(
+      {
+        onResult: (resultText, isFinal) => {
+          if (isFinal) {
+            setText((t) => (t ? t + ' ' + resultText : resultText))
+            setInterim('')
+          } else {
+            setInterim(resultText)
+          }
+        },
+        onError: (msg) => {
+          setVoiceError(msg)
+          setListening(false)
+          setInterim('')
+          stopFnRef.current = null
+        },
+        onEnd: () => {
+          setListening(false)
+          setInterim('')
+          stopFnRef.current = null
+        },
+      },
+      { interim: true },
+    )
+    if (stopFn) {
+      stopFnRef.current = stopFn
+      setListening(true)
     }
-    rec.onend = () => {
-      setListening(false)
-      setInterim('')
-    }
-    rec.onerror = () => {
-      setListening(false)
-      setInterim('')
-    }
-    recRef.current = rec
-    setListening(true)
-    rec.start()
   }, [])
 
   const send = useCallback(
@@ -119,6 +127,7 @@ export function AgentPanel() {
       const msg = (value ?? text).trim()
       if (!msg || agentStatus === 'processing' || agentStatus === 'executing') return
       setText('')
+      setVoiceError(null)
       stopListening()
       stopSpeaking()
       setPlayingId(null)
@@ -147,17 +156,39 @@ export function AgentPanel() {
   }, [])
 
   const handleListen = useCallback(
-    (id: string, content: string) => {
+    async (id: string, content: string) => {
+      setVoiceError(null)
       if (playingId === id) {
         stopSpeaking()
         setPlayingId(null)
         return
       }
+      if (!ttsSupported) {
+        setVoiceError('Síntese de voz não suportada neste navegador.')
+        return
+      }
+      let voices = window.speechSynthesis?.getVoices() ?? []
+      if (!voicesReady || voices.length === 0) {
+        voices = await loadVoices()
+        setVoicesReady(true)
+        setVoicesAvailable(voices.length > 0)
+      }
+      if (voices.length === 0) {
+        setVoiceError('Nenhuma voz disponível para síntese de voz neste navegador.')
+        return
+      }
       stopSpeaking()
-      speakTTS(content, () => setPlayingId(null))
       setPlayingId(id)
+      speakTTS(
+        content,
+        () => setPlayingId(null),
+        (msg) => {
+          setVoiceError(`Falha na síntese de voz: ${msg}`)
+          setPlayingId(null)
+        },
+      )
     },
-    [playingId],
+    [playingId, ttsSupported, voicesReady],
   )
 
   const statusLabel: Record<string, string> = {
@@ -200,7 +231,7 @@ export function AgentPanel() {
       </div>
 
       <div ref={scrollRef} className="flex-1 space-y-4 overflow-y-auto p-4">
-        {agentMessages.length === 0 && !isBusy && (
+        {agentMessages.length === 0 && !isBusy && !voiceError && (
           <div className="mt-8 text-center">
             <p className="font-medium text-foreground">Olá! Sou o agente da HARMOZA 👋</p>
             <p className="mx-auto mt-1 max-w-xs text-sm text-muted-foreground">
@@ -213,7 +244,7 @@ export function AgentPanel() {
                   className="rounded-lg border border-border bg-card px-3 py-2 text-left text-xs text-muted-foreground transition-colors hover:border-primary/40 hover:text-foreground"
                   onClick={() => void send(s)}
                 >
-                  “{s}”
+                  "{s}"
                 </button>
               ))}
             </div>
@@ -270,23 +301,36 @@ export function AgentPanel() {
                         </>
                       )}
                     </button>
-                    {ttsSupported && (
-                      <button
-                        className={cn(
-                          'flex items-center gap-1 rounded-md px-2 py-1 text-[11px] transition-colors hover:bg-muted',
-                          playingId === m.id
+                    <button
+                      className={cn(
+                        'flex items-center gap-1 rounded-md px-2 py-1 text-[11px] transition-colors',
+                        ttsDisabled
+                          ? 'cursor-not-allowed text-muted-foreground/40'
+                          : playingId === m.id
                             ? 'text-primary'
-                            : 'text-muted-foreground hover:text-foreground',
-                        )}
-                        onClick={() => handleListen(m.id, m.content)}
-                        title={playingId === m.id ? 'Parar áudio' : 'Ouvir mensagem'}
-                      >
+                            : 'text-muted-foreground hover:bg-muted hover:text-foreground',
+                      )}
+                      onClick={() => void handleListen(m.id, m.content)}
+                      disabled={ttsDisabled}
+                      title={
+                        !ttsSupported
+                          ? 'Síntese de voz não suportada neste navegador'
+                          : voicesReady && !voicesAvailable
+                            ? 'Nenhuma voz disponível neste navegador'
+                            : playingId === m.id
+                              ? 'Parar áudio'
+                              : 'Ouvir mensagem'
+                      }
+                    >
+                      {ttsDisabled ? (
+                        <VolumeX className="h-3.5 w-3.5" />
+                      ) : (
                         <Volume2
                           className={cn('h-3.5 w-3.5', playingId === m.id && 'animate-pulse')}
                         />
-                        <span>{playingId === m.id ? 'Tocando' : 'Ouvir'}</span>
-                      </button>
-                    )}
+                      )}
+                      <span>{playingId === m.id ? 'Tocando' : 'Ouvir'}</span>
+                    </button>
                   </div>
                 )}
               </div>
@@ -308,6 +352,23 @@ export function AgentPanel() {
             {agentStatus === 'executing'
               ? 'Executando ação no dashboard…'
               : 'Analisando seus dados…'}
+          </div>
+        )}
+
+        {voiceError && (
+          <div className="rounded-xl border border-amber-200 bg-amber-50 p-3">
+            <div className="flex items-start gap-2">
+              <AlertCircle className="mt-0.5 h-4 w-4 shrink-0 text-amber-500" />
+              <div className="flex-1">
+                <p className="text-xs text-amber-700">{voiceError}</p>
+                <button
+                  className="mt-1 text-[11px] font-medium text-amber-600 hover:underline"
+                  onClick={() => setVoiceError(null)}
+                >
+                  Dispensar
+                </button>
+              </div>
+            </div>
           </div>
         )}
 
@@ -338,17 +399,28 @@ export function AgentPanel() {
           </div>
         )}
         <div className="flex items-center gap-2">
-          {micSupported && (
-            <Button
-              variant={listening ? 'destructive' : 'outline'}
-              size="icon"
-              className="h-10 w-10 shrink-0"
-              onClick={listening ? stopListening : startListening}
-              title={listening ? 'Parar gravação' : 'Falar'}
-            >
-              {listening ? <Square className="h-4 w-4" /> : <Mic className="h-4 w-4" />}
-            </Button>
-          )}
+          <Button
+            variant={listening ? 'destructive' : 'outline'}
+            size="icon"
+            className="h-10 w-10 shrink-0"
+            onClick={listening ? stopListening : startListening}
+            disabled={!micSupported}
+            title={
+              !micSupported
+                ? 'Reconhecimento de voz não suportado neste navegador'
+                : listening
+                  ? 'Parar gravação'
+                  : 'Falar'
+            }
+          >
+            {listening ? (
+              <Square className="h-4 w-4" />
+            ) : micSupported ? (
+              <Mic className="h-4 w-4" />
+            ) : (
+              <MicOff className="h-4 w-4" />
+            )}
+          </Button>
           <Input
             value={text}
             onChange={(e) => setText(e.target.value)}
@@ -366,9 +438,15 @@ export function AgentPanel() {
           </Button>
         </div>
         <p className="mt-2 text-center text-[11px] text-muted-foreground">
-          {micSupported
-            ? 'Voz usa os recursos do navegador.'
-            : 'Reconhecimento de voz não disponível neste navegador.'}
+          {!micSupported && !ttsSupported
+            ? 'Reconhecimento e síntese de voz não disponíveis neste navegador. Usa Chrome ou Edge.'
+            : !micSupported
+              ? 'Reconhecimento de voz não disponível neste navegador. Usa Chrome ou Edge para falar.'
+              : !ttsSupported
+                ? 'Síntese de voz não disponível neste navegador.'
+                : voicesReady && !voicesAvailable
+                  ? 'Nenhuma voz de síntese disponível. O reconhecimento de voz continua funcional.'
+                  : 'Voz usa os recursos do navegador.'}
         </p>
       </div>
     </div>

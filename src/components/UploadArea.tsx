@@ -3,10 +3,6 @@
 import { useCallback, useRef, useState } from 'react'
 import { UploadCloud, FileSpreadsheet, Loader2, X } from 'lucide-react'
 import { parseWorkbook, type ParsedWorkbook } from '@/lib/excel'
-
-import { useCallback, useRef, useState } from 'react'
-import { UploadCloud, FileSpreadsheet, Loader2, X } from 'lucide-react'
-import { parseWorkbook, type ParsedWorkbook } from '@/lib/excel'
 import { isSupportedFile, SUPPORTED_EXTENSIONS } from '@/lib/fileParser'
 
 interface Props {

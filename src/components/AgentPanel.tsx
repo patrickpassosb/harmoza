@@ -1,277 +1,325 @@
-// HARMOZA — agente de IA (texto + voz) em painel lateral
-import { useEffect, useRef, useState } from 'react'
-import { Mic, Square, Send, Volume2, X, Bot, Loader2, Sparkles } from 'lucide-react'
-import type { AgentState, ChatMessage } from '@/lib/types'
+// HARMOZA — agente de IA (chat + voz)
+import { useCallback, useEffect, useRef, useState } from 'react'
+import { X, Mic, Square, Volume2, Send, Sparkles, Loader2, Bot, User } from 'lucide-react'
+import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
+import { ScrollArea } from '@/components/ui/scroll-area'
+import { useHarmoza } from '@/lib/store'
 
-interface Props {
-  open: boolean
-  onClose: () => void
-  messages: ChatMessage[]
-  onSend: (text: string) => void
-  state: AgentState
-  onStopListening: () => void
-}
-
-// Tipos globais da Web Speech API (não vêm no lib.dom padrão do TS)
-type SpeechRecognitionCtor = new () => SpeechRecognitionLike
 interface SpeechRecognitionLike {
   lang: string
-  interimResults: boolean
   continuous: boolean
+  interimResults: boolean
   onresult:
     | ((e: {
-        results: ArrayLike<{ 0: { transcript: string } } & { isFinal: boolean }>
         resultIndex: number
+        results: ArrayLike<{ isFinal: boolean; 0: { transcript: string } }>
       }) => void)
     | null
   onend: (() => void) | null
   onerror: ((e: { error: string }) => void) | null
   start: () => void
   stop: () => void
-}
-interface SpeechRecognitionEventLike {
-  results: ArrayLike<{ 0: { transcript: string } } & { isFinal: boolean }>
+  abort: () => void
 }
 
-function getSpeechRecognition(): SpeechRecognitionCtor | null {
+function getRecognition(): SpeechRecognitionLike | null {
   const w = window as unknown as Record<string, unknown>
-  return (
-    (w.SpeechRecognition as SpeechRecognitionCtor) ||
-    (w.webkitSpeechRecognition as SpeechRecognitionCtor) ||
-    null
-  )
+  const Ctor = (w.SpeechRecognition || w.webkitSpeechRecognition) as
+    | (new () => SpeechRecognitionLike)
+    | undefined
+  return Ctor ? new Ctor() : null
 }
 
-function getSpeechSynthesis(): SpeechSynthesis | null {
-  return typeof window !== 'undefined' ? window.speechSynthesis : null
-}
-
-export function AgentPanel({ open, onClose, messages, onSend, state, onStopListening }: Props) {
-  const [input, setInput] = useState('')
+export function AgentPanel() {
+  const { agentOpen, setAgentOpen, agentMessages, agentStatus, sendAgentText, clearAgent, speak } =
+    useHarmoza()
+  const [text, setText] = useState('')
   const [listening, setListening] = useState(false)
-  const [transcript, setTranscript] = useState('')
-  const [voiceEnabled, setVoiceEnabled] = useState(true)
-  const recogRef = useRef<SpeechRecognitionLike | null>(null)
+  const [interim, setInterim] = useState('')
+  const recRef = useRef<SpeechRecognitionLike | null>(null)
   const scrollRef = useRef<HTMLDivElement>(null)
+  const [speaking, setSpeaking] = useState(false)
 
+  // autoscroll
   useEffect(() => {
-    scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: 'smooth' })
-  }, [messages, state])
-
-  // Fala a última resposta do agente quando chega
-  useEffect(() => {
-    const last = messages[messages.length - 1]
-    if (last?.role === 'assistant' && voiceEnabled) {
-      const synth = getSpeechSynthesis()
-      if (synth) {
-        synth.cancel()
-        const u = new SpeechSynthesisUtterance(last.content)
-        u.lang = 'pt-BR'
-        u.rate = 1.05
-        synth.speak(u)
-      }
+    if (scrollRef.current) {
+      scrollRef.current.scrollTop = scrollRef.current.scrollHeight
     }
-  }, [messages, voiceEnabled])
+  }, [agentMessages, interim, agentStatus])
 
-  const stopVoice = () => {
-    const synth = getSpeechSynthesis()
-    if (synth) synth.cancel()
-  }
+  // stop listening on close
+  useEffect(() => {
+    if (!agentOpen && recRef.current) {
+      recRef.current.abort()
+      setListening(false)
+    }
+  }, [agentOpen])
 
-  const startListening = () => {
-    const Ctor = getSpeechRecognition()
-    if (!Ctor) {
-      setTranscript('Seu navegador não suporta reconhecimento de voz. Use o campo de texto.')
+  const stopListening = useCallback(() => {
+    recRef.current?.abort()
+    recRef.current = null
+    setListening(false)
+    setInterim('')
+  }, [])
+
+  const startListening = useCallback(() => {
+    const rec = getRecognition()
+    if (!rec) {
+      alert(
+        'Seu navegador não suporta reconhecimento de voz. Use o Chrome para falar com o agente.',
+      )
       return
     }
-    stopVoice()
-    setListening(true)
-    setTranscript('')
-    const rec = new Ctor()
     rec.lang = 'pt-BR'
-    rec.interimResults = true
     rec.continuous = false
+    rec.interimResults = true
     rec.onresult = (e) => {
-      let text = ''
+      let final = ''
+      let inter = ''
       for (let i = e.resultIndex; i < e.results.length; i++) {
-        text += e.results[i][0].transcript
+        const r = e.results[i]
+        if (r.isFinal) final += r[0].transcript
+        else inter += r[0].transcript
       }
-      setTranscript(text)
+      if (final) {
+        setText((t) => (t ? `${t} ${final}` : final))
+        setInterim('')
+      } else {
+        setInterim(inter)
+      }
     }
     rec.onend = () => {
       setListening(false)
-      // Se houve transcrição, envia
-      if (transcript.trim()) {
-        onSend(transcript.trim())
-        setTranscript('')
-      }
+      setInterim('')
     }
     rec.onerror = (e) => {
+      console.log('rec error', e.error)
       setListening(false)
-      if (e.error !== 'aborted') setTranscript(`Erro de reconhecimento: ${e.error}`)
+      setInterim('')
     }
+    recRef.current = rec
+    setListening(true)
     rec.start()
-    recogRef.current = rec
-  }
+  }, [])
 
-  const stopListening = () => {
-    onStopListening()
-    recogRef.current?.stop()
-    setListening(false)
-  }
+  const send = useCallback(
+    async (value?: string) => {
+      const msg = (value ?? text).trim()
+      if (!msg || agentStatus === 'processing' || agentStatus === 'executing') return
+      setText('')
+      stopListening()
+      await sendAgentText(msg)
+    },
+    [text, agentStatus, sendAgentText, stopListening],
+  )
 
-  const submit = () => {
-    const text = input.trim()
-    if (!text) return
-    onSend(text)
-    setInput('')
-  }
+  const replay = useCallback(
+    (content: string) => {
+      speak(content)
+      setSpeaking(true)
+      window.setTimeout(() => setSpeaking(false), Math.min(8000, content.length * 60))
+    },
+    [speak],
+  )
 
-  if (!open) return null
-
-  const stateLabel: Record<AgentState, string> = {
+  const statusLabel: Record<string, string> = {
     idle: 'Pronto para ajudar',
     listening: 'Ouvindo…',
     processing: 'Processando…',
     executing: 'Executando ação…',
-    done: 'Concluído',
-    error: 'Não entendi',
+    done: 'Ação concluída',
+    unclear: 'Não entendi — pode reformular?',
+    error: 'Ocorreu um erro',
   }
 
   return (
-    <div className="fixed inset-y-0 right-0 z-40 flex w-full max-w-md flex-col border-l border-border bg-white shadow-2xl animate-slide-in-right">
-      <div className="flex items-center justify-between border-b border-border bg-[#172554] px-4 py-3 text-white">
-        <div className="flex items-center gap-2.5">
-          <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-white/10">
+    <div
+      className={`fixed inset-y-0 right-0 z-50 flex w-full max-w-md flex-col bg-background shadow-2xl transition-transform duration-300 ${
+        agentOpen ? 'translate-x-0' : 'translate-x-full'
+      }`}
+    >
+      {/* Header */}
+      <div className="flex items-center justify-between border-b border-border bg-card px-4 py-3">
+        <div className="flex items-center gap-2">
+          <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-primary/10 text-primary">
             <Bot className="h-5 w-5" />
           </div>
           <div>
-            <p className="text-sm font-semibold">Agente HARMOZA</p>
-            <p className="flex items-center gap-1 text-[11px] text-white/60">
+            <p className="text-sm font-semibold text-foreground">Agente HARMOZA</p>
+            <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
               <span
-                className={`h-1.5 w-1.5 rounded-full ${state === 'listening' ? 'animate-pulse bg-red-400' : state === 'processing' || state === 'executing' ? 'animate-pulse bg-amber-400' : 'bg-emerald-400'}`}
+                className={`h-1.5 w-1.5 rounded-full ${agentStatus === 'listening' ? 'animate-pulse-soft bg-red-500' : 'bg-emerald-500'}`}
               />
-              {stateLabel[state]}
+              {statusLabel[agentStatus] ?? 'Pronto'}
             </p>
           </div>
         </div>
         <div className="flex items-center gap-1">
-          <button
-            onClick={() => {
-              setVoiceEnabled(!voiceEnabled)
-              if (voiceEnabled) stopVoice()
-            }}
-            title={voiceEnabled ? 'Desativar voz' : 'Ativar voz'}
-            className={`rounded-lg p-1.5 ${voiceEnabled ? 'bg-white/10 text-white' : 'text-white/50 hover:text-white'}`}
+          <Button
+            variant="ghost"
+            size="icon"
+            className="h-8 w-8"
+            onClick={clearAgent}
+            title="Limpar conversa"
           >
-            <Volume2 className="h-4 w-4" />
-          </button>
-          <button
-            onClick={onClose}
-            className="rounded-lg p-1.5 text-white/60 hover:bg-white/10 hover:text-white"
+            <Sparkles className="h-4 w-4" />
+          </Button>
+          <Button
+            variant="ghost"
+            size="icon"
+            className="h-8 w-8"
+            onClick={() => setAgentOpen(false)}
             title="Fechar"
           >
             <X className="h-4 w-4" />
-          </button>
+          </Button>
         </div>
       </div>
 
-      <div ref={scrollRef} className="flex-1 space-y-3 overflow-y-auto px-4 py-4">
-        {messages.length === 0 && (
-          <div className="flex flex-col items-center gap-2 pt-8 text-center">
-            <Sparkles className="h-8 w-8 text-[#0F766E]" />
-            <p className="text-sm font-medium text-[#172554]">Pergunte sobre seus dados</p>
-            <p className="max-w-[260px] text-xs text-muted-foreground">
-              “Qual foi o total de vendas?” · “Crie um gráfico de vendas por região” · “Qual região
-              tem o melhor resultado?”
-            </p>
-          </div>
-        )}
-        {messages.map((m) => (
-          <div key={m.id} className={`flex ${m.role === 'user' ? 'justify-end' : 'justify-start'}`}>
-            <div
-              className={`max-w-[85%] rounded-2xl px-3.5 py-2.5 text-sm shadow-subtle ${
-                m.role === 'user'
-                  ? 'rounded-br-md bg-[#172554] text-white'
-                  : 'rounded-bl-md bg-muted text-[#1e293b]'
-              }`}
-            >
-              <p className="whitespace-pre-wrap">{m.content}</p>
-              {m.action && (
-                <p className="mt-1.5 flex items-center gap-1 text-[11px] font-medium text-[#0F766E]">
-                  <Sparkles className="h-3 w-3" /> Ação executada no dashboard
-                </p>
-              )}
+      {/* Messages */}
+      <ScrollArea className="flex-1" ref={scrollRef as never}>
+        <div className="flex flex-col gap-3 p-4">
+          {agentMessages.length === 0 && (
+            <div className="mt-8 text-center">
+              <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-primary/10 text-primary">
+                <Bot className="h-7 w-7" />
+              </div>
+              <p className="mt-3 font-medium text-foreground">Olá! Sou o agente da HARMOZA 👋</p>
+              <p className="mx-auto mt-1 max-w-xs text-sm text-muted-foreground">
+                Posso consultar seus dados, criar gráficos e gerenciar o dashboard. Fale ou digite:
+              </p>
+              <div className="mx-auto mt-4 flex max-w-xs flex-col gap-1.5 text-left">
+                {[
+                  'Qual foi o total de vendas?',
+                  'Mostre as vendas por mês',
+                  'Crie um gráfico de vendas por região',
+                  'Qual região tem o melhor resultado?',
+                ].map((s) => (
+                  <button
+                    key={s}
+                    className="rounded-lg border border-border bg-card px-3 py-2 text-left text-xs text-muted-foreground transition-colors hover:border-primary/40 hover:text-foreground"
+                    onClick={() => send(s)}
+                  >
+                    “{s}”
+                  </button>
+                ))}
+              </div>
             </div>
-          </div>
-        ))}
-        {(state === 'processing' || state === 'executing') && (
-          <div className="flex justify-start">
-            <div className="flex items-center gap-2 rounded-2xl rounded-bl-md bg-muted px-3.5 py-2.5 text-sm text-muted-foreground">
-              <Loader2 className="h-4 w-4 animate-spin text-[#0F766E]" />
-              {state === 'executing' ? 'Executando ação…' : 'Analisando dados…'}
-            </div>
-          </div>
-        )}
-        {listening && (
-          <div className="flex items-center gap-2 rounded-2xl border border-red-200 bg-red-50 px-3.5 py-2.5 text-sm text-red-700">
-            <span className="relative flex h-3 w-3">
-              <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-red-400 opacity-75" />
-              <span className="relative inline-flex h-3 w-3 rounded-full bg-red-500" />
-            </span>
-            {transcript || 'Ouvindo…'}
-          </div>
-        )}
-      </div>
+          )}
 
-      <div className="border-t border-border bg-white p-3">
-        {transcript && !listening && (
-          <p className="mb-2 rounded-lg bg-muted px-3 py-1.5 text-xs text-muted-foreground">
-            Você disse: {transcript}
-          </p>
-        )}
+          {agentMessages.map((m) => (
+            <div
+              key={m.id}
+              className={`flex ${m.role === 'user' ? 'justify-end' : 'justify-start'}`}
+            >
+              <div
+                className={`flex max-w-[85%] gap-2 ${m.role === 'user' ? 'flex-row-reverse' : ''}`}
+              >
+                <div
+                  className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-full ${
+                    m.role === 'user'
+                      ? 'bg-primary text-primary-foreground'
+                      : 'bg-harmoza-teal/15 text-harmoza-teal'
+                  }`}
+                >
+                  {m.role === 'user' ? (
+                    <User className="h-3.5 w-3.5" />
+                  ) : (
+                    <Bot className="h-3.5 w-3.5" />
+                  )}
+                </div>
+                <div
+                  className={`rounded-2xl px-3.5 py-2.5 text-sm ${
+                    m.role === 'user'
+                      ? 'rounded-tr-sm bg-primary text-primary-foreground'
+                      : 'rounded-tl-sm border border-border bg-card text-foreground'
+                  }`}
+                >
+                  <p className="whitespace-pre-wrap leading-relaxed">{m.content}</p>
+                  {m.role === 'assistant' && (
+                    <div className="mt-2 flex items-center gap-2">
+                      <button
+                        className="flex items-center gap-1 text-[11px] text-muted-foreground transition-colors hover:text-foreground"
+                        onClick={() => replay(m.content)}
+                      >
+                        <Volume2 className={`h-3.5 w-3.5 ${speaking ? 'text-harmoza-teal' : ''}`} />
+                        {speaking ? 'Ouvindo…' : 'Ouvir de novo'}
+                      </button>
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+          ))}
+
+          {interim && (
+            <div className="flex justify-end">
+              <div className="rounded-2xl rounded-tr-sm border border-dashed border-primary/40 bg-primary/5 px-3.5 py-2.5 text-sm text-muted-foreground italic">
+                {interim}…
+              </div>
+            </div>
+          )}
+
+          {(agentStatus === 'processing' || agentStatus === 'executing') && (
+            <div className="flex items-center gap-2 text-xs text-muted-foreground">
+              <Loader2 className="h-3.5 w-3.5 animate-spin" />
+              {agentStatus === 'executing'
+                ? 'Executando ação no dashboard…'
+                : 'Analisando seus dados…'}
+            </div>
+          )}
+        </div>
+      </ScrollArea>
+
+      {/* Input */}
+      <div className="border-t border-border bg-card p-3">
         <div className="flex items-center gap-2">
-          <div className="flex flex-1 items-center gap-2 rounded-xl border border-border bg-white px-3 py-2 focus-within:border-[#0F766E]">
-            <input
-              value={input}
-              onChange={(e) => setInput(e.target.value)}
-              onKeyDown={(e) => e.key === 'Enter' && submit()}
-              placeholder="Digite ou use o microfone…"
-              className="flex-1 bg-transparent text-sm outline-none placeholder:text-muted-foreground"
-            />
-            {listening ? (
-              <button
-                onClick={stopListening}
-                className="rounded-lg bg-red-500 p-1.5 text-white hover:bg-red-600"
-                title="Parar gravação"
-              >
-                <Square className="h-4 w-4" />
-              </button>
-            ) : (
-              <button
-                onClick={startListening}
-                disabled={state === 'processing' || state === 'executing'}
-                className={`rounded-lg p-1.5 transition-colors ${
-                  voiceEnabled
-                    ? 'text-[#0F766E] hover:bg-[#0F766E]/10'
-                    : 'text-muted-foreground/50 hover:bg-muted'
-                } disabled:opacity-50`}
-                title="Falar com o agente"
-              >
-                <Mic className="h-4 w-4" />
-              </button>
-            )}
-          </div>
-          <button
-            onClick={submit}
-            disabled={!input.trim() || state === 'processing' || state === 'executing'}
-            className="rounded-xl bg-[#172554] p-2.5 text-white transition-colors hover:bg-[#172554]/90 disabled:opacity-40"
-            title="Enviar"
+          <Button
+            variant={listening ? 'destructive' : 'outline'}
+            size="icon"
+            className="h-10 w-10 shrink-0"
+            onClick={listening ? stopListening : startListening}
+            title={listening ? 'Parar gravação' : 'Falar com o agente'}
+          >
+            {listening ? <Square className="h-4 w-4" /> : <Mic className="h-4 w-4" />}
+          </Button>
+          <Input
+            value={text}
+            onChange={(e) => setText(e.target.value)}
+            onKeyDown={(e) => e.key === 'Enter' && send()}
+            placeholder={listening ? 'Fale agora…' : 'Pergunte ou dê um comando…'}
+            className="h-10"
+          />
+          <Button
+            className="h-10 w-10 shrink-0"
+            size="icon"
+            onClick={() => send()}
+            disabled={!text.trim() || agentStatus === 'processing' || agentStatus === 'executing'}
           >
             <Send className="h-4 w-4" />
-          </button>
+          </Button>
         </div>
+        <p className="mt-2 text-center text-[11px] text-muted-foreground">
+          Reconhecimento e síntese de voz usam os recursos do seu navegador.
+        </p>
       </div>
     </div>
+  )
+}
+
+export function AgentFab() {
+  const { setAgentOpen, agentStatus } = useHarmoza()
+  const busy =
+    agentStatus === 'processing' || agentStatus === 'executing' || agentStatus === 'listening'
+  return (
+    <Button
+      className="fixed bottom-6 right-6 z-40 h-14 w-14 rounded-full shadow-elevation"
+      size="icon"
+      onClick={() => setAgentOpen(true)}
+      title="Abrir agente de IA"
+    >
+      {busy ? <Loader2 className="h-6 w-6 animate-spin" /> : <Bot className="h-6 w-6" />}
+    </Button>
   )
 }

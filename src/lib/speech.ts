@@ -116,6 +116,20 @@ export function hasVoices(): boolean {
   return isSpeechSynthesisSupported() && window.speechSynthesis.getVoices().length > 0
 }
 
+export function stripMarkdown(text: string): string {
+  if (!text) return ''
+  return text
+    .replace(/(\*\*|__)(.*?)\1/g, '$2')
+    .replace(/(\*|_)(.*?)\1/g, '$2')
+    .replace(/`([^`]+)`/g, '$1')
+    .replace(/^#{1,6}\s+/gm, '')
+    .replace(/^[-*•]\s+/gm, '')
+    .replace(/^\d+\.\s+/gm, '')
+    .replace(/\n{2,}/g, '. ')
+    .replace(/\n/g, ' ')
+    .trim()
+}
+
 export function speak(text: string, onEnd?: () => void, onError?: (msg: string) => void): void {
   if (!isSpeechSynthesisSupported()) {
     onError?.('Síntese de voz não suportada neste navegador.')
@@ -124,8 +138,9 @@ export function speak(text: string, onEnd?: () => void, onError?: (msg: string) 
   }
   try {
     window.speechSynthesis.cancel()
+    const cleanText = stripMarkdown(text)
     const voices = window.speechSynthesis.getVoices()
-    const utterance = new SpeechSynthesisUtterance(text)
+    const utterance = new SpeechSynthesisUtterance(cleanText)
     utterance.lang = 'pt-BR'
     utterance.rate = 1.05
     utterance.pitch = 1

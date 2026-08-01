@@ -26,6 +26,7 @@ import {
   isSpeechSynthesisSupported,
   isSpeechSupported,
 } from '@/lib/speech'
+import { MarkdownContent } from '@/components/MarkdownContent'
 import { cn } from '@/lib/utils'
 
 const SUGGESTIONS = [
@@ -280,7 +281,11 @@ export function AgentPanel() {
                       : 'rounded-tl-sm border border-border bg-card text-foreground',
                   )}
                 >
-                  <p className="whitespace-pre-wrap break-words leading-relaxed">{m.content}</p>
+                  {m.role === 'user' ? (
+                    <p className="whitespace-pre-wrap break-words leading-relaxed">{m.content}</p>
+                  ) : (
+                    <MarkdownContent content={m.content} />
+                  )}
                 </div>
                 {m.role === 'assistant' && (
                   <div className="mt-1.5 flex items-center gap-1">

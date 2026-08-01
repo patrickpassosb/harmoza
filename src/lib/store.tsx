@@ -64,7 +64,9 @@ interface HarmozaCtx {
   setAgentOpen: (v: boolean) => void
   agentMessages: AgentMessage[]
   agentStatus: AgentStatus
+  agentError: string
   sendAgentText: (text: string) => Promise<void>
+  retryAgent: () => Promise<void>
   clearAgent: () => void
   speak: (text: string) => void
 }
@@ -122,7 +124,10 @@ export function HarmozaProvider({ children }: { children: ReactNode }) {
   const [isGeneratingDash, setIsGeneratingDash] = useState(false)
   const [agentOpen, setAgentOpen] = useState(false)
   const [agentMessages, setAgentMessages] = useState<AgentMessage[]>([])
+  const agentMessagesRef = useRef<AgentMessage[]>([])
   const [agentStatus, setAgentStatus] = useState<AgentStatus>('idle')
+  const [agentError, setAgentError] = useState('')
+  const lastQueryRef = useRef('')
 
   const workbook = useMemo(
     () => workbooks.find((w) => w.id === activeWorkbookId) ?? null,
@@ -286,7 +291,9 @@ export function HarmozaProvider({ children }: { children: ReactNode }) {
     setLayout([])
     setDashReady(false)
     setAgentMessages([])
+    agentMessagesRef.current = []
     setAgentOpen(false)
+    setAgentError('')
   }, [])
 
   useEffect(() => {
@@ -491,32 +498,41 @@ export function HarmozaProvider({ children }: { children: ReactNode }) {
         content: trimmed,
         created: Date.now(),
       }
-      setAgentMessages((m) => [...m, userMsg])
+      const newMessages = [...agentMessagesRef.current, userMsg]
+      agentMessagesRef.current = newMessages
+      setAgentMessages(newMessages)
       setAgentStatus('processing')
+      setAgentError('')
+      lastQueryRef.current = trimmed
 
       const wb = lastWorkbookRef.current
-      const ctxData = {
-        sheets: wb
-          ? wb.sheets.map((s) => ({
-              name: s.name,
-              rowCount: s.rows.length,
-              columns: s.columns.map((c) => c.name + ' (' + c.type + ')'),
-            }))
-          : [],
-        dashboard: components.map((c) => ({ id: c.id, title: c.title, kind: c.kind })),
-      }
+      const dataSummary = wb
+        ? wb.sheets
+            .map(
+              (s) =>
+                `Aba "${s.name}": ${s.rows.length} linhas, colunas: ${s.columns.map((c) => c.name + ' (' + c.type + ')').join(', ')}`,
+            )
+            .join('\n')
+        : 'Nenhum dado carregado'
+
+      const dashboardSummary =
+        components.length > 0
+          ? components.map((c) => `- ${c.title} (${c.kind})`).join('\n')
+          : 'Dashboard vazio'
+
+      const messagesPayload = newMessages.map((m) => ({ role: m.role, content: m.content }))
 
       try {
         const res = await pb.send('/backend/v1/harmoza/agent', {
           method: 'POST',
-          body: JSON.stringify({ question: trimmed, data: ctxData }),
+          body: JSON.stringify({ messages: messagesPayload, dataSummary, dashboardSummary }),
         })
         const reply: string = res?.reply ?? 'Desculpe, não consegui processar.'
         const action: string | null = res?.action ?? null
         const params: Record<string, unknown> = res?.params ?? {}
         let finalReply = reply
         let finalAction = action
-        if (action && activeSheet) {
+        if (action && action !== 'answer' && activeSheet) {
           setAgentStatus('executing')
           try {
             const ex = executeAgentAction(action, params, {
@@ -536,28 +552,21 @@ export function HarmozaProvider({ children }: { children: ReactNode }) {
             finalAction = null
           }
         }
-        setAgentMessages((m) => [
-          ...m,
-          {
-            id: uid(),
-            role: 'assistant',
-            content: finalReply,
-            action: finalAction ?? undefined,
-            created: Date.now(),
-          },
-        ])
+        const assistantMsg: AgentMessage = {
+          id: uid(),
+          role: 'assistant',
+          content: finalReply,
+          action: finalAction ?? undefined,
+          created: Date.now(),
+        }
+        const updated = [...agentMessagesRef.current, assistantMsg]
+        agentMessagesRef.current = updated
+        setAgentMessages(updated)
         setAgentStatus('done')
-        speak(finalReply)
       } catch {
-        setAgentMessages((m) => [
-          ...m,
-          {
-            id: uid(),
-            role: 'assistant',
-            content: 'Não consegui falar com o agente agora.',
-            created: Date.now(),
-          },
-        ])
+        setAgentError(
+          'Não foi possível conectar ao agente. Verifique sua conexão e tente novamente.',
+        )
         setAgentStatus('error')
       }
     },
@@ -572,6 +581,19 @@ export function HarmozaProvider({ children }: { children: ReactNode }) {
       addColumn,
     ],
   )
+
+  const retryAgent = useCallback(async () => {
+    const lastQuery = lastQueryRef.current
+    if (!lastQuery) return
+    const current = agentMessagesRef.current
+    if (current.length > 0 && current[current.length - 1].role === 'user') {
+      const trimmed = current.slice(0, -1)
+      agentMessagesRef.current = trimmed
+      setAgentMessages(trimmed)
+    }
+    setAgentError('')
+    await sendAgentText(lastQuery)
+  }, [sendAgentText])
 
   const deleteWorkbook = useCallback(
     async (id: string): Promise<{ error: string | null }> => {
@@ -626,7 +648,10 @@ export function HarmozaProvider({ children }: { children: ReactNode }) {
     [workbooks, activeWorkbookId],
   )
 
-  const clearAgent = useCallback(() => setAgentMessages([]), [])
+  const clearAgent = useCallback(() => {
+    agentMessagesRef.current = []
+    setAgentMessages([])
+  }, [])
 
   const value: HarmozaCtx = {
     workbook,
@@ -665,7 +690,9 @@ export function HarmozaProvider({ children }: { children: ReactNode }) {
     setAgentOpen,
     agentMessages,
     agentStatus,
+    agentError,
     sendAgentText,
+    retryAgent,
     clearAgent,
     speak,
   }
@@ -689,7 +716,8 @@ function executeAgentAction(
 ): { reply?: string; action?: string } {
   const { sheet, addComponent, removeComponent, components, createSheet, setView } = env
   switch (action) {
-    case 'create_chart': {
+    case 'create_chart':
+    case 'add_chart': {
       const title = String(params.title ?? 'Novo gráfico')
       const kindRaw = String(params.kind ?? 'bar').toLowerCase()
       const kind =

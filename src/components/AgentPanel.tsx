@@ -1,14 +1,29 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { X, Mic, Square, Volume2, Send, Loader2, Bot, User } from 'lucide-react'
+import {
+  X,
+  Mic,
+  Square,
+  Volume2,
+  Send,
+  Loader2,
+  Bot,
+  User,
+  Copy,
+  Check,
+  AlertCircle,
+  RefreshCw,
+} from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { useHarmoza } from '@/lib/store'
+import {
+  speak as speakTTS,
+  stopSpeaking,
+  isSpeechSynthesisSupported,
+  isSpeechSupported,
+} from '@/lib/speech'
+import { cn } from '@/lib/utils'
 
-function getRecognition(): any {
-  const w = window as any
-  const Ctor = w.SpeechRecognition || w.webkitSpeechRecognition
-  return Ctor ? new Ctor() : null
-}
 const SUGGESTIONS = [
   'Qual foi o total de vendas?',
   'Mostre as vendas por mês',
@@ -16,22 +31,45 @@ const SUGGESTIONS = [
   'Qual região tem o melhor resultado?',
 ]
 
+function getRecognition(): any {
+  const w = window as any
+  const Ctor = w.SpeechRecognition || w.webkitSpeechRecognition
+  return Ctor ? new Ctor() : null
+}
+
 export function AgentPanel() {
-  const { agentOpen, setAgentOpen, agentMessages, agentStatus, sendAgentText, clearAgent, speak } =
-    useHarmoza()
+  const {
+    agentOpen,
+    setAgentOpen,
+    agentMessages,
+    agentStatus,
+    agentError,
+    sendAgentText,
+    retryAgent,
+  } = useHarmoza()
   const [text, setText] = useState('')
   const [listening, setListening] = useState(false)
   const [interim, setInterim] = useState('')
+  const [copiedId, setCopiedId] = useState<string | null>(null)
+  const [playingId, setPlayingId] = useState<string | null>(null)
   const recRef = useRef<any>(null)
   const scrollRef = useRef<HTMLDivElement>(null)
 
+  const ttsSupported = isSpeechSynthesisSupported()
+  const micSupported = isSpeechSupported()
+
   useEffect(() => {
-    if (scrollRef.current) scrollRef.current.scrollTop = scrollRef.current.scrollHeight
-  }, [agentMessages, interim, agentStatus])
+    if (scrollRef.current) {
+      scrollRef.current.scrollTop = scrollRef.current.scrollHeight
+    }
+  }, [agentMessages, interim, agentStatus, agentError])
+
   useEffect(() => {
-    if (!agentOpen && recRef.current) {
-      recRef.current.abort()
+    if (!agentOpen) {
+      recRef.current?.abort()
       setListening(false)
+      stopSpeaking()
+      setPlayingId(null)
     }
   }, [agentOpen])
 
@@ -41,18 +79,16 @@ export function AgentPanel() {
     setListening(false)
     setInterim('')
   }, [])
+
   const startListening = useCallback(() => {
     const rec = getRecognition()
-    if (!rec) {
-      alert('Seu navegador não suporta reconhecimento de voz. Use o Chrome.')
-      return
-    }
+    if (!rec) return
     rec.lang = 'pt-BR'
     rec.continuous = false
     rec.interimResults = true
     rec.onresult = (e: any) => {
-      let final = '',
-        inter = ''
+      let final = ''
+      let inter = ''
       for (let i = e.resultIndex; i < e.results.length; i++) {
         const r = e.results[i]
         if (r.isFinal) final += r[0].transcript
@@ -61,7 +97,9 @@ export function AgentPanel() {
       if (final) {
         setText((t) => (t ? t + ' ' + final : final))
         setInterim('')
-      } else setInterim(inter)
+      } else {
+        setInterim(inter)
+      }
     }
     rec.onend = () => {
       setListening(false)
@@ -75,16 +113,53 @@ export function AgentPanel() {
     setListening(true)
     rec.start()
   }, [])
+
   const send = useCallback(
     async (value?: string) => {
       const msg = (value ?? text).trim()
       if (!msg || agentStatus === 'processing' || agentStatus === 'executing') return
       setText('')
       stopListening()
+      stopSpeaking()
+      setPlayingId(null)
       await sendAgentText(msg)
     },
     [text, agentStatus, sendAgentText, stopListening],
   )
+
+  const handleCopy = useCallback(async (id: string, content: string) => {
+    try {
+      if (navigator.clipboard) {
+        await navigator.clipboard.writeText(content)
+      } else {
+        const textarea = document.createElement('textarea')
+        textarea.value = content
+        document.body.appendChild(textarea)
+        textarea.select()
+        document.execCommand('copy')
+        document.body.removeChild(textarea)
+      }
+      setCopiedId(id)
+      setTimeout(() => setCopiedId(null), 2000)
+    } catch {
+      /* clipboard unavailable */
+    }
+  }, [])
+
+  const handleListen = useCallback(
+    (id: string, content: string) => {
+      if (playingId === id) {
+        stopSpeaking()
+        setPlayingId(null)
+        return
+      }
+      stopSpeaking()
+      speakTTS(content, () => setPlayingId(null))
+      setPlayingId(id)
+    },
+    [playingId],
+  )
+
   const statusLabel: Record<string, string> = {
     idle: 'Pronto para ajudar',
     listening: 'Ouvindo…',
@@ -94,7 +169,11 @@ export function AgentPanel() {
     unclear: 'Não entendi',
     error: 'Ocorreu um erro',
   }
+
   if (!agentOpen) return null
+
+  const isBusy = agentStatus === 'processing' || agentStatus === 'executing'
+
   return (
     <div className="fixed inset-y-0 right-0 z-50 flex w-full max-w-md flex-col border-l border-border bg-background shadow-2xl animate-fade-in">
       <div className="flex items-center justify-between border-b border-border bg-card px-4 py-3">
@@ -106,12 +185,12 @@ export function AgentPanel() {
             <p className="text-sm font-semibold text-foreground">Agente HARMOZA</p>
             <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
               <span
-                className={
-                  'h-1.5 w-1.5 rounded-full ' +
-                  (agentStatus === 'listening' ? 'animate-pulse bg-red-500' : 'bg-emerald-500')
-                }
+                className={cn(
+                  'h-1.5 w-1.5 rounded-full',
+                  listening ? 'animate-pulse bg-red-500' : 'bg-emerald-500',
+                )}
               />
-              {statusLabel[agentStatus] ?? 'Pronto'}
+              {listening ? 'Ouvindo…' : (statusLabel[agentStatus] ?? 'Pronto')}
             </p>
           </div>
         </div>
@@ -119,8 +198,9 @@ export function AgentPanel() {
           <X className="h-4 w-4" />
         </Button>
       </div>
-      <div ref={scrollRef} className="flex-1 space-y-3 overflow-y-auto p-4">
-        {agentMessages.length === 0 && (
+
+      <div ref={scrollRef} className="flex-1 space-y-4 overflow-y-auto p-4">
+        {agentMessages.length === 0 && !isBusy && (
           <div className="mt-8 text-center">
             <p className="font-medium text-foreground">Olá! Sou o agente da HARMOZA 👋</p>
             <p className="mx-auto mt-1 max-w-xs text-sm text-muted-foreground">
@@ -139,21 +219,20 @@ export function AgentPanel() {
             </div>
           </div>
         )}
+
         {agentMessages.map((m) => (
           <div
             key={m.id}
-            className={'flex ' + (m.role === 'user' ? 'justify-end' : 'justify-start')}
+            className={cn('flex', m.role === 'user' ? 'justify-end' : 'justify-start')}
           >
-            <div
-              className={'flex max-w-[85%] gap-2 ' + (m.role === 'user' ? 'flex-row-reverse' : '')}
-            >
+            <div className={cn('flex max-w-[85%] gap-2', m.role === 'user' && 'flex-row-reverse')}>
               <div
-                className={
-                  'flex h-7 w-7 shrink-0 items-center justify-center rounded-full ' +
-                  (m.role === 'user'
+                className={cn(
+                  'flex h-7 w-7 shrink-0 items-center justify-center rounded-full',
+                  m.role === 'user'
                     ? 'bg-primary text-primary-foreground'
-                    : 'bg-[#0F766E]/15 text-[#0F766E]')
-                }
+                    : 'bg-[#0F766E]/15 text-[#0F766E]',
+                )}
               >
                 {m.role === 'user' ? (
                   <User className="h-3.5 w-3.5" />
@@ -161,27 +240,60 @@ export function AgentPanel() {
                   <Bot className="h-3.5 w-3.5" />
                 )}
               </div>
-              <div
-                className={
-                  'rounded-2xl px-3.5 py-2.5 text-sm ' +
-                  (m.role === 'user'
-                    ? 'rounded-tr-sm bg-primary text-primary-foreground'
-                    : 'rounded-tl-sm border border-border bg-card text-foreground')
-                }
-              >
-                <p className="whitespace-pre-wrap leading-relaxed">{m.content}</p>
+              <div className="min-w-0">
+                <div
+                  className={cn(
+                    'rounded-2xl px-3.5 py-2.5 text-sm',
+                    m.role === 'user'
+                      ? 'rounded-tr-sm bg-primary text-primary-foreground'
+                      : 'rounded-tl-sm border border-border bg-card text-foreground',
+                  )}
+                >
+                  <p className="whitespace-pre-wrap break-words leading-relaxed">{m.content}</p>
+                </div>
                 {m.role === 'assistant' && (
-                  <button
-                    className="mt-2 flex items-center gap-1 text-[11px] text-muted-foreground hover:text-foreground"
-                    onClick={() => speak(m.content)}
-                  >
-                    <Volume2 className="h-3.5 w-3.5" /> Ouvir de novo
-                  </button>
+                  <div className="mt-1.5 flex items-center gap-1">
+                    <button
+                      className="flex items-center gap-1 rounded-md px-2 py-1 text-[11px] text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+                      onClick={() => void handleCopy(m.id, m.content)}
+                      title="Copiar mensagem"
+                    >
+                      {copiedId === m.id ? (
+                        <>
+                          <Check className="h-3.5 w-3.5 text-emerald-500" />
+                          <span className="text-emerald-500">Copiado</span>
+                        </>
+                      ) : (
+                        <>
+                          <Copy className="h-3.5 w-3.5" />
+                          <span>Copiar</span>
+                        </>
+                      )}
+                    </button>
+                    {ttsSupported && (
+                      <button
+                        className={cn(
+                          'flex items-center gap-1 rounded-md px-2 py-1 text-[11px] transition-colors hover:bg-muted',
+                          playingId === m.id
+                            ? 'text-primary'
+                            : 'text-muted-foreground hover:text-foreground',
+                        )}
+                        onClick={() => handleListen(m.id, m.content)}
+                        title={playingId === m.id ? 'Parar áudio' : 'Ouvir mensagem'}
+                      >
+                        <Volume2
+                          className={cn('h-3.5 w-3.5', playingId === m.id && 'animate-pulse')}
+                        />
+                        <span>{playingId === m.id ? 'Tocando' : 'Ouvir'}</span>
+                      </button>
+                    )}
+                  </div>
                 )}
               </div>
             </div>
           </div>
         ))}
+
         {interim && (
           <div className="flex justify-end">
             <div className="rounded-2xl border border-dashed border-primary/40 bg-primary/5 px-3.5 py-2.5 text-sm text-muted-foreground italic">
@@ -189,7 +301,8 @@ export function AgentPanel() {
             </div>
           </div>
         )}
-        {(agentStatus === 'processing' || agentStatus === 'executing') && (
+
+        {isBusy && (
           <div className="flex items-center gap-2 text-xs text-muted-foreground">
             <Loader2 className="h-3.5 w-3.5 animate-spin" />
             {agentStatus === 'executing'
@@ -197,18 +310,45 @@ export function AgentPanel() {
               : 'Analisando seus dados…'}
           </div>
         )}
+
+        {agentStatus === 'error' && agentError && (
+          <div className="rounded-xl border border-red-200 bg-red-50 p-3">
+            <div className="flex items-start gap-2">
+              <AlertCircle className="mt-0.5 h-4 w-4 shrink-0 text-red-500" />
+              <div className="flex-1">
+                <p className="text-xs text-red-700">{agentError}</p>
+                <button
+                  className="mt-2 flex items-center gap-1 rounded-md bg-red-100 px-2.5 py-1 text-[11px] font-medium text-red-700 transition-colors hover:bg-red-200"
+                  onClick={() => void retryAgent()}
+                >
+                  <RefreshCw className="h-3 w-3" />
+                  Tentar novamente
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
+
       <div className="border-t border-border bg-card p-3">
+        {listening && (
+          <div className="mb-2 flex items-center gap-2 rounded-lg bg-red-50 px-3 py-2">
+            <span className="h-2 w-2 animate-pulse rounded-full bg-red-500" />
+            <span className="text-xs font-medium text-red-600">Ouvindo… Fale agora</span>
+          </div>
+        )}
         <div className="flex items-center gap-2">
-          <Button
-            variant={listening ? 'destructive' : 'outline'}
-            size="icon"
-            className="h-10 w-10 shrink-0"
-            onClick={listening ? stopListening : startListening}
-            title={listening ? 'Parar gravação' : 'Falar'}
-          >
-            {listening ? <Square className="h-4 w-4" /> : <Mic className="h-4 w-4" />}
-          </Button>
+          {micSupported && (
+            <Button
+              variant={listening ? 'destructive' : 'outline'}
+              size="icon"
+              className="h-10 w-10 shrink-0"
+              onClick={listening ? stopListening : startListening}
+              title={listening ? 'Parar gravação' : 'Falar'}
+            >
+              {listening ? <Square className="h-4 w-4" /> : <Mic className="h-4 w-4" />}
+            </Button>
+          )}
           <Input
             value={text}
             onChange={(e) => setText(e.target.value)}
@@ -220,13 +360,15 @@ export function AgentPanel() {
             className="h-10 w-10 shrink-0"
             size="icon"
             onClick={() => void send()}
-            disabled={!text.trim() || agentStatus === 'processing' || agentStatus === 'executing'}
+            disabled={!text.trim() || isBusy}
           >
             <Send className="h-4 w-4" />
           </Button>
         </div>
         <p className="mt-2 text-center text-[11px] text-muted-foreground">
-          Voz usa os recursos do navegador.
+          {micSupported
+            ? 'Voz usa os recursos do navegador.'
+            : 'Reconhecimento de voz não disponível neste navegador.'}
         </p>
       </div>
     </div>

@@ -183,6 +183,36 @@ export function HarmozaProvider({ children }: { children: ReactNode }) {
     }
   }, [])
 
+  const fetchRemoteWorkbooks = useCallback(async () => {
+    if (!pb.authStore.isValid || !pb.authStore.record?.id) return
+    try {
+      const records = await pb.collection('workbooks').getFullList({
+        filter: `owner = "${pb.authStore.record.id}"`,
+        sort: '-created',
+      })
+      const remoteWbs: Workbook[] = []
+      for (const r of records) {
+        try {
+          const raw = typeof r.rawJson === 'string' ? JSON.parse(r.rawJson) : r.rawJson
+          if (raw && raw.sheets && raw.id) {
+            remoteWbs.push(raw as Workbook)
+          }
+        } catch {
+          /* skip malformed */
+        }
+      }
+      if (remoteWbs.length > 0) {
+        setWorkbooks((prev) => {
+          const existingIds = new Set(prev.map((w) => w.id))
+          const toAdd = remoteWbs.filter((w) => !existingIds.has(w.id))
+          return toAdd.length > 0 ? [...prev, ...toAdd] : prev
+        })
+      }
+    } catch {
+      /* network or auth error — silently ignore */
+    }
+  }, [])
+
   const loadDemo = useCallback(async () => {
     const wb = demoWorkbook()
     setWorkbooks((prev) => {

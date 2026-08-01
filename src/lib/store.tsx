@@ -4,6 +4,7 @@ import { toast } from 'sonner'
 import type {
   AgentMessage,
   AgentStatus,
+  ComponentFilter,
   DashComponent,
   DashKind,
   DashLayoutItem,
@@ -13,6 +14,7 @@ import type {
   Workbook,
 } from './types'
 import { generateDashboard } from './dashboard'
+import { recomputeComponentData, validateFieldExists, getAvailableFields } from './componentData'
 import { demoWorkbook } from './demo'
 import { parseFiles } from './fileParser'
 import pb from './pocketbase/client'
@@ -68,6 +70,8 @@ interface HarmozaCtx {
   agentStatus: AgentStatus
   agentError: string
   agentTargetWorkbookId: string | null
+  selectedComponentId: string | null
+  setSelectedComponent: (id: string | null) => void
   sendAgentText: (text: string) => Promise<void>
   retryAgent: () => Promise<void>
   clearAgent: () => void
@@ -131,6 +135,7 @@ export function HarmozaProvider({ children }: { children: ReactNode }) {
   const [agentStatus, setAgentStatus] = useState<AgentStatus>('idle')
   const [agentError, setAgentError] = useState('')
   const [agentTargetWorkbookId, setAgentTargetWorkbookId] = useState<string | null>(null)
+  const [selectedComponentId, setSelectedComponentId] = useState<string | null>(null)
   const lastQueryRef = useRef('')
 
   const workbook = useMemo(
@@ -627,7 +632,20 @@ export function HarmozaProvider({ children }: { children: ReactNode }) {
 
       const dashboardSummary =
         components.length > 0
-          ? components.map((c) => `- ${c.title} (${c.kind})`).join('\n')
+          ? components
+              .map((c) => {
+                const cfg = c.config || {}
+                const dim = cfg.dimensionCol ? `dim="${cfg.dimensionCol}"` : ''
+                const met = cfg.metricCol ? `metric="${cfg.metricCol}"` : ''
+                const flt = (cfg.filters as ComponentFilter[]) || []
+                const filtStr =
+                  flt.length > 0
+                    ? `filters=[${flt.map((f) => `${f.field} ${f.op} ${f.value}`).join(', ')}]`
+                    : ''
+                const parts = [dim, met, filtStr].filter(Boolean).join(', ')
+                return `- ${c.title} (${c.kind}${parts ? ', ' + parts : ''})`
+              })
+              .join('\n')
           : 'Dashboard vazio'
 
       const messagesPayload = newMessages.map((m) => ({ role: m.role, content: m.content }))
@@ -656,6 +674,8 @@ export function HarmozaProvider({ children }: { children: ReactNode }) {
               setDashReady,
               setView,
               setAgentTargetWorkbookId,
+              selectedComponentId,
+              setSelectedComponentId,
               speak,
               persistWorkbookChange,
             })
@@ -684,7 +704,15 @@ export function HarmozaProvider({ children }: { children: ReactNode }) {
         setAgentStatus('error')
       }
     },
-    [workbooks, activeWorkbookId, components, speak, setView, persistWorkbookChange],
+    [
+      workbooks,
+      activeWorkbookId,
+      components,
+      speak,
+      setView,
+      persistWorkbookChange,
+      selectedComponentId,
+    ],
   )
 
   const retryAgent = useCallback(async () => {
@@ -797,6 +825,8 @@ export function HarmozaProvider({ children }: { children: ReactNode }) {
     agentStatus,
     agentError,
     agentTargetWorkbookId,
+    selectedComponentId,
+    setSelectedComponent: setSelectedComponentId,
     sendAgentText,
     retryAgent,
     clearAgent,
@@ -820,6 +850,8 @@ function executeAgentAction(
     setDashReady: (v: boolean) => void
     setView: (v: ViewMode) => void
     setAgentTargetWorkbookId: (id: string) => void
+    selectedComponentId: string | null
+    setSelectedComponentId: (id: string | null) => void
     speak: (t: string) => void
     persistWorkbookChange: (wb: Workbook) => void
   },
@@ -835,6 +867,8 @@ function executeAgentAction(
     setDashReady,
     setView,
     setAgentTargetWorkbookId,
+    selectedComponentId,
+    setSelectedComponentId,
     persistWorkbookChange,
   } = env
 
@@ -1138,6 +1172,175 @@ function executeAgentAction(
       setView('sheet')
       return {
         reply: `Criei a nova aba **"${name}"** no arquivo **${targetWb.fileName}**.`,
+        action,
+      }
+    }
+    case 'edit_filter': {
+      const filterAction = String(params.filterAction || 'add') as 'add' | 'replace' | 'remove'
+      const field = String(params.field || '').trim()
+      const op = String(params.op || 'eq') as ComponentFilter['op']
+      const value = String(params.value || '').trim()
+      const title = String(params.title ?? '').trim()
+
+      const { workbook: targetWb, ambiguous } = findTargetWorkbook()
+      if (ambiguous) return { reply: ambiguityReply(), action: null }
+      if (!targetWb) return { reply: 'Não encontrei o arquivo especificado.', action: null }
+      setAgentTargetWorkbookId(targetWb.id)
+
+      let targetComp = components.find(
+        (c) => title && c.title.toLowerCase().includes(title.toLowerCase()),
+      )
+      if (!targetComp && selectedComponentId) {
+        targetComp = components.find((c) => c.id === selectedComponentId)
+      }
+      if (!targetComp) {
+        return {
+          reply:
+            'Não encontrei o componente. Por favor, selecione um componente no dashboard ou informe seu nome.',
+          action: null,
+        }
+      }
+      const comp = targetComp
+
+      const sourceSheetId = (comp.config?.sourceSheetId as string) || targetWb.activeSheetId
+      const sheet = targetWb.sheets.find((s) => s.id === sourceSheetId) ?? targetWb.sheets[0]
+      if (!sheet) return { reply: 'Não encontrei a aba de dados do componente.', action: null }
+
+      const columns = sheet.columns || []
+      const config = comp.config || {}
+      const existingFilters = (config.filters as ComponentFilter[]) || []
+
+      if (filterAction === 'remove') {
+        if (!field) {
+          const newConfig = { ...config, filters: [] }
+          const updated = recomputeComponentData({ ...comp, config: newConfig }, sheet)
+          setComponents((prev) => prev.map((c) => (c.id === comp.id ? updated : c)))
+          return {
+            reply: `Removi todos os filtros do componente **"${comp.title}"** no arquivo **${targetWb.fileName}**.`,
+            action,
+          }
+        }
+        const newFilters = existingFilters.filter(
+          (f) => f.field.toLowerCase() !== field.toLowerCase(),
+        )
+        const newConfig = { ...config, filters: newFilters }
+        const updated = recomputeComponentData({ ...comp, config: newConfig }, sheet)
+        setComponents((prev) => prev.map((c) => (c.id === comp.id ? updated : c)))
+        return {
+          reply: `Removi o filtro do campo **"${field}"** do componente **"${comp.title}"** no arquivo **${targetWb.fileName}**.`,
+          action,
+        }
+      }
+
+      if (!field) {
+        return { reply: 'Por favor, informe o nome do campo para filtrar.', action: null }
+      }
+      if (!validateFieldExists(columns, field)) {
+        const available = getAvailableFields(columns)
+        return {
+          reply: `O campo **"${field}"** não existe nos dados do arquivo **${targetWb.fileName}**. Campos disponíveis: ${available.map((f) => `**${f}**`).join(', ')}. Por favor, escolha um dos campos listados.`,
+          action: null,
+        }
+      }
+
+      const newFilter: ComponentFilter = { field, op, value }
+      let newFilters: ComponentFilter[]
+      if (filterAction === 'replace') {
+        newFilters = [newFilter]
+      } else {
+        newFilters = [
+          ...existingFilters.filter((f) => f.field.toLowerCase() !== field.toLowerCase()),
+          newFilter,
+        ]
+      }
+
+      const newConfig = { ...config, filters: newFilters }
+      const updated = recomputeComponentData({ ...comp, config: newConfig }, sheet)
+      setComponents((prev) => prev.map((c) => (c.id === comp.id ? updated : c)))
+
+      const opLabels: Record<string, string> = {
+        eq: 'igual a',
+        neq: 'diferente de',
+        contains: 'contendo',
+        gt: 'maior que',
+        lt: 'menor que',
+        gte: 'maior ou igual a',
+        lte: 'menor ou igual a',
+      }
+      return {
+        reply: `Filtro aplicado no componente **"${comp.title}"** no arquivo **${targetWb.fileName}**: **${field}** ${opLabels[op] || op} **${value}**.`,
+        action,
+      }
+    }
+    case 'edit_axis': {
+      const dimension = String(params.dimension ?? '').trim()
+      const metric = String(params.metric ?? '').trim()
+      const title = String(params.title ?? '').trim()
+
+      const { workbook: targetWb, ambiguous } = findTargetWorkbook()
+      if (ambiguous) return { reply: ambiguityReply(), action: null }
+      if (!targetWb) return { reply: 'Não encontrei o arquivo especificado.', action: null }
+      setAgentTargetWorkbookId(targetWb.id)
+
+      let targetComp = components.find(
+        (c) => title && c.title.toLowerCase().includes(title.toLowerCase()),
+      )
+      if (!targetComp && selectedComponentId) {
+        targetComp = components.find((c) => c.id === selectedComponentId)
+      }
+      if (!targetComp) {
+        return {
+          reply:
+            'Não encontrei o componente. Por favor, selecione um componente no dashboard ou informe seu nome.',
+          action: null,
+        }
+      }
+      const comp = targetComp
+
+      if (comp.kind === 'kpi') {
+        return {
+          reply:
+            'Não é possível alterar eixos de um indicador (KPI). Use um gráfico de barras, linhas, pizza, ranking ou tabela.',
+          action: null,
+        }
+      }
+
+      const sourceSheetId = (comp.config?.sourceSheetId as string) || targetWb.activeSheetId
+      const sheet = targetWb.sheets.find((s) => s.id === sourceSheetId) ?? targetWb.sheets[0]
+      if (!sheet) return { reply: 'Não encontrei a aba de dados do componente.', action: null }
+
+      const columns = sheet.columns || []
+      const config = comp.config || {}
+
+      if (dimension && !validateFieldExists(columns, dimension)) {
+        const available = getAvailableFields(columns)
+        return {
+          reply: `O campo **"${dimension}"** não existe nos dados do arquivo **${targetWb.fileName}**. Campos disponíveis: ${available.map((f) => `**${f}**`).join(', ')}.`,
+          action: null,
+        }
+      }
+
+      if (metric && !validateFieldExists(columns, metric)) {
+        const available = getAvailableFields(columns)
+        return {
+          reply: `O campo **"${metric}"** não existe nos dados do arquivo **${targetWb.fileName}**. Campos disponíveis: ${available.map((f) => `**${f}**`).join(', ')}.`,
+          action: null,
+        }
+      }
+
+      const newConfig = {
+        ...config,
+        ...(dimension ? { dimensionCol: dimension } : {}),
+        ...(metric ? { metricCol: metric } : {}),
+      }
+      const updated = recomputeComponentData({ ...comp, config: newConfig }, sheet)
+      setComponents((prev) => prev.map((c) => (c.id === comp.id ? updated : c)))
+
+      const changes: string[] = []
+      if (dimension) changes.push(`dimensão (eixo X) para **${dimension}**`)
+      if (metric) changes.push(`métrica (eixo Y) para **${metric}**`)
+      return {
+        reply: `Alterei ${changes.join(' e ')} no componente **"${comp.title}"** no arquivo **${targetWb.fileName}**.`,
         action,
       }
     }

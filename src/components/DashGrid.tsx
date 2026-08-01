@@ -12,6 +12,7 @@ import {
 } from '@/components/ui/dropdown-menu'
 import { DashCardBody } from './DashCard'
 import { useHarmoza } from '@/lib/store'
+import { cn } from '@/lib/utils'
 
 const Grid = WidthProvider(GridLayout)
 
@@ -24,6 +25,8 @@ export function DashGrid(_props?: any) {
     duplicateComponent,
     dashReady,
     isGeneratingDash,
+    selectedComponentId,
+    setSelectedComponent,
   } = useHarmoza()
   const [dragging, setDragging] = useState(false)
 
@@ -69,7 +72,16 @@ export function DashGrid(_props?: any) {
         {components.map((comp) => (
           <div
             key={comp.id}
-            className="group relative overflow-hidden rounded-2xl border border-border bg-card shadow-subtle transition-shadow hover:shadow-elevation"
+            className={cn(
+              'group relative overflow-hidden rounded-2xl border bg-card shadow-subtle transition-shadow hover:shadow-elevation',
+              selectedComponentId === comp.id
+                ? 'border-primary ring-2 ring-primary/30'
+                : 'border-border',
+            )}
+            onClick={(e) => {
+              e.stopPropagation()
+              setSelectedComponent(selectedComponentId === comp.id ? null : comp.id)
+            }}
           >
             <div className="dash-drag-handle flex cursor-move items-center justify-between gap-2 border-b border-border/70 bg-muted/30 px-3 py-2">
               <div className="flex min-w-0 items-center gap-1.5">

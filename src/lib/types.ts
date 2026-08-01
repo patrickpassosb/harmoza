@@ -18,6 +18,14 @@ export interface Workbook {
   source?: string
 }
 export type DashKind = 'kpi' | 'bar' | 'line' | 'pie' | 'table' | 'ranking'
+
+export type FilterOp = 'eq' | 'neq' | 'contains' | 'gt' | 'lt' | 'gte' | 'lte'
+
+export interface ComponentFilter {
+  field: string
+  op: FilterOp
+  value: string
+}
 export interface DashComponent {
   id: string
   kind: DashKind

@@ -72,7 +72,13 @@ export function generateDashboard(sheet: SheetData): GeneratedDashboard {
       kind: 'kpi',
       title: 'Receita Total',
       data: [{ label: 'Receita Total', value: Math.round(revSum * 100) / 100 }],
-      config: { currency: true, value: revSum },
+      config: {
+        currency: true,
+        value: revSum,
+        sourceSheetId: sheet.id,
+        metricCol: cols[revIdx]?.name,
+        aggregation: 'sum',
+      },
     })
     layout.push({ i: id, x: 0, y: nextY, w: 3, h: 2 })
   }
@@ -85,7 +91,13 @@ export function generateDashboard(sheet: SheetData): GeneratedDashboard {
       kind: 'kpi',
       title: 'Lucro Total',
       data: [{ label: 'Lucro Total', value: Math.round(profSum * 100) / 100 }],
-      config: { currency: true, value: profSum },
+      config: {
+        currency: true,
+        value: profSum,
+        sourceSheetId: sheet.id,
+        metricCol: cols[profIdx]?.name,
+        aggregation: 'sum',
+      },
     })
     layout.push({ i: id, x: 3, y: nextY, w: 3, h: 2 })
   }
@@ -99,7 +111,13 @@ export function generateDashboard(sheet: SheetData): GeneratedDashboard {
       kind: 'kpi',
       title: 'Ticket Médio',
       data: [{ label: 'Ticket Médio', value: Math.round(avg * 100) / 100 }],
-      config: { currency: true, value: avg },
+      config: {
+        currency: true,
+        value: avg,
+        sourceSheetId: sheet.id,
+        metricCol: cols[revIdx]?.name,
+        aggregation: 'avg',
+      },
     })
     layout.push({ i: id, x: 6, y: nextY, w: 3, h: 2 })
   }
@@ -112,7 +130,12 @@ export function generateDashboard(sheet: SheetData): GeneratedDashboard {
       kind: 'kpi',
       title: 'Total de Registros',
       data: [{ label: 'Total de Registros', value: rows.length }],
-      config: { currency: false, value: rows.length },
+      config: {
+        currency: false,
+        value: rows.length,
+        sourceSheetId: sheet.id,
+        aggregation: 'count',
+      },
     })
     layout.push({ i: id, x: 9, y: nextY, w: 3, h: 2 })
     nextY += 2
@@ -142,7 +165,12 @@ export function generateDashboard(sheet: SheetData): GeneratedDashboard {
         kind: 'line',
         title: 'Evolução de Receita',
         data,
-        config: { currency: true },
+        config: {
+          currency: true,
+          sourceSheetId: sheet.id,
+          dimensionCol: cols[dateIdx]?.name,
+          metricCol: cols[revIdx]?.name,
+        },
       })
       layout.push({ i: id, x: 0, y: nextY, w: 6, h: 4 })
     }
@@ -168,7 +196,12 @@ export function generateDashboard(sheet: SheetData): GeneratedDashboard {
         kind: 'pie',
         title: 'Vendas por Categoria',
         data,
-        config: { currency: true },
+        config: {
+          currency: true,
+          sourceSheetId: sheet.id,
+          dimensionCol: cols[catIdx]?.name,
+          metricCol: cols[revIdx]?.name,
+        },
       })
       layout.push({ i: id, x: 6, y: nextY, w: 6, h: 4 })
       nextY += 4
@@ -199,7 +232,12 @@ export function generateDashboard(sheet: SheetData): GeneratedDashboard {
         kind: 'ranking',
         title: 'Top Produtos',
         data,
-        config: { currency: revIdx >= 0 },
+        config: {
+          currency: revIdx >= 0,
+          sourceSheetId: sheet.id,
+          dimensionCol: cols[prodIdx]?.name,
+          metricCol: metricIdx >= 0 ? cols[metricIdx]?.name : undefined,
+        },
       })
       layout.push({ i: id, x: 0, y: nextY, w: 6, h: 4 })
     }
@@ -225,7 +263,12 @@ export function generateDashboard(sheet: SheetData): GeneratedDashboard {
         kind: 'table',
         title: 'Principais Clientes',
         data,
-        config: { currency: true },
+        config: {
+          currency: true,
+          sourceSheetId: sheet.id,
+          dimensionCol: cols[clientIdx]?.name,
+          metricCol: cols[revIdx]?.name,
+        },
       })
       layout.push({ i: id, x: 6, y: nextY, w: 6, h: 4 })
       nextY += 4
@@ -247,7 +290,13 @@ export function generateDashboard(sheet: SheetData): GeneratedDashboard {
         kind: 'bar',
         title: 'Status das Operações',
         data,
-        config: { currency: false },
+        config: {
+          currency: false,
+          sourceSheetId: sheet.id,
+          dimensionCol: cols[statusIdx]?.name,
+          metricCol: undefined,
+          aggregation: 'count',
+        },
       })
       layout.push({ i: id, x: 0, y: nextY, w: 12, h: 4 })
       nextY += 4

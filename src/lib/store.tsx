@@ -1,5 +1,6 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
+import { toast } from 'sonner'
 import type {
   AgentMessage,
   AgentStatus,
@@ -42,7 +43,7 @@ interface HarmozaCtx {
   addRow: () => void
   addColumn: (name: string) => void
   importFile: (file: File) => Promise<void>
-  loadDemo: () => void
+  loadDemo: () => Promise<void>
   reset: () => void
   components: DashComponent[]
   layout: DashLayoutItem[]
@@ -90,7 +91,7 @@ export function HarmozaProvider({ children }: { children: ReactNode }) {
   const [view, setView] = useState<ViewMode>(persisted?.view ?? 'sheet')
   const [components, setComponents] = useState<DashComponent[]>(persisted?.components ?? [])
   const [layout, setLayout] = useState<DashLayoutItem[]>(persisted?.layout ?? [])
-  const [dashReady, setDashReady] = useState(false)
+  const [dashReady, setDashReady] = useState(!!persisted?.components?.length)
   const [isGeneratingDash, setIsGeneratingDash] = useState(false)
   const [agentOpen, setAgentOpen] = useState(false)
   const [agentMessages, setAgentMessages] = useState<AgentMessage[]>([])
@@ -119,20 +120,44 @@ export function HarmozaProvider({ children }: { children: ReactNode }) {
       const res = await parseExcelFile(file)
       setWorkbook(res.workbook)
       setFileName(res.workbook.fileName)
-      setWarnings(res.warnings)
+      setWarnings(res.warnings || [])
       setImportState('success')
       setView('sheet')
-      setComponents([])
-      setLayout([])
-      setDashReady(false)
+
+      if (res.workbook.sheets && res.workbook.sheets.length > 0) {
+        const activeS = res.workbook.sheets[0]
+        const gen = generateDashboard(activeS)
+        setComponents(gen.components)
+        setLayout(gen.layout)
+        setDashReady(true)
+      }
+
+      if (pb.authStore.isValid && pb.authStore.record?.id) {
+        try {
+          await pb.collection('workbooks').create({
+            owner: pb.authStore.record.id,
+            name: res.workbook.fileName.replace(/\.xlsx?$/i, ''),
+            fileName: res.workbook.fileName,
+            rawJson: res.workbook,
+          })
+        } catch (e) {
+          console.warn('Could not persist workbook in backend:', e)
+        }
+      }
+
+      toast.success(`Planilha "${res.workbook.fileName}" importada!`, {
+        description: `${res.workbook.sheets.length} aba(s) identificada(s). Redirecionando para visualização.`,
+      })
     } catch (err) {
       setImportState('error')
-      setImportError(err instanceof Error ? err.message : 'Não foi possível processar o arquivo.')
+      const msg = err instanceof Error ? err.message : 'Não foi possível processar o arquivo.'
+      setImportError(msg)
+      toast.error('Erro na importação', { description: msg })
       setWorkbook(null)
     }
   }, [])
 
-  const loadDemo = useCallback(() => {
+  const loadDemo = useCallback(async () => {
     const wb = demoWorkbook()
     setWorkbook(wb)
     setFileName(wb.fileName)
@@ -140,9 +165,17 @@ export function HarmozaProvider({ children }: { children: ReactNode }) {
     setImportError('')
     setWarnings([])
     setView('sheet')
-    setComponents([])
-    setLayout([])
-    setDashReady(false)
+
+    if (wb.sheets && wb.sheets.length > 0) {
+      const gen = generateDashboard(wb.sheets[0])
+      setComponents(gen.components)
+      setLayout(gen.layout)
+      setDashReady(true)
+    }
+
+    toast.success('Planilha de demonstração carregada!', {
+      description: 'Aba Vendas 2025 pronta para análise.',
+    })
   }, [])
 
   const reset = useCallback(() => {
@@ -163,6 +196,13 @@ export function HarmozaProvider({ children }: { children: ReactNode }) {
   const setActiveSheet = useCallback((id: string) => {
     setWorkbook((w) => {
       if (!w || !w.sheets.some((s) => s.id === id)) return w
+      const targetSheet = w.sheets.find((s) => s.id === id)
+      if (targetSheet) {
+        const gen = generateDashboard(targetSheet)
+        setComponents(gen.components)
+        setLayout(gen.layout)
+        setDashReady(true)
+      }
       return { ...w, activeSheetId: id }
     })
   }, [])
@@ -242,7 +282,7 @@ export function HarmozaProvider({ children }: { children: ReactNode }) {
       setDashReady(true)
       setIsGeneratingDash(false)
       setView('dashboard')
-    }, 700)
+    }, 500)
   }, [activeSheet])
 
   const addComponent = useCallback(

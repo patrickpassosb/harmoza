@@ -4,7 +4,7 @@
 
 import * as XLSX from 'xlsx'
 import type { Column, ColumnType, Sheet, Workbook } from '@/lib/harmoza'
-import { inferColumnType } from '@/lib/harmoza'
+import { inferColumnType, safeString } from '@/lib/harmoza'
 
 export interface ParseResult {
   workbook: Workbook
@@ -24,32 +24,60 @@ export function parseWorkbookFile(file: File): Promise<ParseResult> {
         const data = e.target?.result
         const wb = XLSX.read(data, { type: 'array', cellDates: true })
         const sheets: Sheet[] = []
+
+        if (!wb.SheetNames || wb.SheetNames.length === 0) {
+          reject(new Error('O arquivo não contém abas de dados.'))
+          return
+        }
+
         for (const sheetName of wb.SheetNames) {
           const ws = wb.Sheets[sheetName]
-          const rows: Record<string, unknown>[] = XLSX.utils.sheet_to_json<Record<string, unknown>>(
-            ws,
-            {
-              defval: '',
-              raw: true,
-            },
-          )
-          if (rows.length === 0) continue
-          const headers = Object.keys(rows[0])
-          const columns: Column[] = headers.map((h, i) => {
-            const values = rows.map((r) => r[h])
-            const type: ColumnType = inferColumnType(h, values)
-            return { name: h, type }
+          if (!ws) continue
+
+          const rawRows: Record<string, unknown>[] = XLSX.utils.sheet_to_json<
+            Record<string, unknown>
+          >(ws, {
+            defval: '',
+            raw: true,
           })
-          // normalize values (dates to ISO, keep numbers)
-          const normalized = rows.map((r) => {
-            const out: Record<string, unknown> = {}
-            for (const h of headers) {
-              out[h] = cellValue(r[h])
+          if (rawRows.length === 0) continue
+
+          const rawHeaders = Object.keys(rawRows[0])
+          const usedHeaders = new Set<string>()
+
+          const columns: Column[] = rawHeaders.map((h, i) => {
+            let headerName = safeString(h)
+            if (!headerName) headerName = `Coluna ${i + 1}`
+
+            let uniqueName = headerName
+            let counter = 2
+            while (usedHeaders.has(uniqueName.toLowerCase())) {
+              uniqueName = `${headerName}_${counter}`
+              counter++
             }
+            usedHeaders.add(uniqueName.toLowerCase())
+
+            const values = rawRows.map((r) => r[h])
+            const type: ColumnType = inferColumnType(uniqueName, values)
+            return { name: uniqueName, type }
+          })
+
+          const normalized = rawRows.map((r) => {
+            const out: Record<string, unknown> = {}
+            rawHeaders.forEach((h, idx) => {
+              const colName = columns[idx].name
+              out[colName] = cellValue(r[h])
+            })
             return out
           })
-          sheets.push({ name: sheetName, columns, rows: normalized })
+
+          sheets.push({
+            name: safeString(sheetName) || `Aba ${sheets.length + 1}`,
+            columns,
+            rows: normalized,
+          })
         }
+
         if (sheets.length === 0) {
           reject(
             new Error(
@@ -58,6 +86,7 @@ export function parseWorkbookFile(file: File): Promise<ParseResult> {
           )
           return
         }
+
         const workbook: Workbook = {
           id: 'wb-' + Date.now(),
           name: file.name.replace(/\.xlsx?$/i, '') || 'Planilha importada',
@@ -68,7 +97,9 @@ export function parseWorkbookFile(file: File): Promise<ParseResult> {
       } catch (err) {
         reject(
           new Error(
-            'Não foi possível ler o arquivo. Verifique se é um .xlsx válido. (' + String(err) + ')',
+            'Não foi possível ler o arquivo. Verifique se é um .xlsx válido. (' +
+              (err instanceof Error ? err.message : String(err)) +
+              ')',
           ),
         )
       }

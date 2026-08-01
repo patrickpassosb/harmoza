@@ -34,7 +34,6 @@ export interface Widget {
   y: number
   w: number
   h: number
-  // dados calculados (a partir de colunas reais)
   data?: {
     labels?: string[]
     values?: number[]
@@ -52,49 +51,66 @@ export interface DashboardState {
   widgets: Widget[]
 }
 
+/* Converte qualquer valor para string de forma segura */
+export function safeString(v: unknown): string {
+  if (v === null || v === undefined) return ''
+  return String(v).trim()
+}
+
+/* Extrai o nome da coluna de forma defensiva */
+export function getColName(c: unknown): string {
+  if (!c) return ''
+  if (typeof c === 'string') return c
+  if (typeof c === 'object' && 'name' in c) return safeString((c as { name: unknown }).name)
+  return safeString(c)
+}
+
 /* ------------------------------------------------------------------ */
 /* Inferência de tipo de coluna a partir dos valores                   */
 /* ------------------------------------------------------------------ */
 
-export function inferColumnType(name: string, values: unknown[]): ColumnType {
-  const norm = name.toLowerCase()
+export function inferColumnType(name: unknown, values: unknown[]): ColumnType {
+  const norm = safeString(name).toLowerCase()
   if (/(data|date|dia|mês|mes|periodo|período|when)/.test(norm)) {
-    // só é data se os valores parecerem data
-    const sample = values.filter((v) => v !== null && v !== '' && v !== undefined).slice(0, 8)
-    if (sample.length > 0 && sample.every((v) => looksLikeDate(String(v)))) return 'date'
+    const sample = (values || [])
+      .filter((v) => v !== null && v !== '' && v !== undefined)
+      .slice(0, 8)
+    if (sample.length > 0 && sample.every((v) => looksLikeDate(safeString(v)))) return 'date'
   }
   if (
-    /(preco|preço|valor|receita|venda|custo|lucro|total|price|amount|revenue|cost|profit|budget|saldo)/.test(
+    /(preco|preço|valor|receita|venda|custo|lucro|total|price|amount|revenue|cost|profit|budget|saldo|desconto|preco_unitario)/.test(
       norm,
     )
   ) {
-    const sample = values.filter((v) => v !== null && v !== '' && v !== undefined)
-    if (sample.length > 0 && sample.every((v) => isNumeric(String(v)))) return 'currency'
+    const sample = (values || []).filter((v) => v !== null && v !== '' && v !== undefined)
+    if (sample.length > 0 && sample.every((v) => isNumeric(safeString(v)))) return 'currency'
   }
   if (/(percent|%|taxa|rate|margem|comissão|comissao)/.test(norm)) {
-    const sample = values.filter((v) => v !== null && v !== '' && v !== undefined)
-    if (sample.length > 0 && sample.every((v) => isNumeric(String(v)))) return 'percentage'
+    const sample = (values || []).filter((v) => v !== null && v !== '' && v !== undefined)
+    if (sample.length > 0 && sample.every((v) => isNumeric(safeString(v)))) return 'percentage'
   }
-  if (/(qtd|quant|qtde|numero|número|count|amount|idade|estoque|unidades)/.test(norm)) {
-    const sample = values.filter((v) => v !== null && v !== '' && v !== undefined)
-    if (sample.length > 0 && sample.every((v) => isNumeric(String(v)))) return 'number'
+  if (/(qtd|quant|qtde|quantidade|numero|número|count|amount|idade|estoque|unidades)/.test(norm)) {
+    const sample = (values || []).filter((v) => v !== null && v !== '' && v !== undefined)
+    if (sample.length > 0 && sample.every((v) => isNumeric(safeString(v)))) return 'number'
   }
   return 'text'
 }
 
 export function looksLikeDate(v: string): boolean {
+  if (!v) return false
   return /^\d{4}[-/]\d{1,2}[-/]\d{1,2}/.test(v) || /^\d{1,2}[-/]\d{1,2}[-/]\d{2,4}/.test(v)
 }
 
 export function isNumeric(v: string): boolean {
-  if (v.trim() === '') return false
+  if (!v || v.trim() === '') return false
   const cleaned = v.replace(/[R$\s.]/g, '').replace(',', '.')
   return !isNaN(Number(cleaned)) && cleaned.trim() !== ''
 }
 
 export function parseNumber(v: unknown): number | null {
-  if (typeof v === 'number') return v
+  if (typeof v === 'number') return isNaN(v) ? null : v
   if (typeof v === 'string') {
+    if (!v.trim()) return null
     const cleaned = v.replace(/[R$\s.]/g, '').replace(',', '.')
     const n = Number(cleaned)
     return isNaN(n) ? null : n
@@ -103,11 +119,10 @@ export function parseNumber(v: unknown): number | null {
 }
 
 export function parseDate(v: unknown): Date | null {
-  if (v instanceof Date) return v
-  const s = String(v).trim()
+  if (v instanceof Date) return isNaN(v.getTime()) ? null : v
+  const s = safeString(v)
   if (!s) return null
   if (typeof v === 'number') {
-    // serial Excel
     if (v > 20000 && v < 80000) {
       const d = new Date(Math.round((v - 25569) * 86400 * 1000))
       return isNaN(d.getTime()) ? null : d
@@ -116,7 +131,6 @@ export function parseDate(v: unknown): Date | null {
   }
   const d = new Date(s)
   if (!isNaN(d.getTime())) return d
-  // dd/mm/aaaa
   const m = s.match(/^(\d{1,2})[/-](\d{1,2})[/-](\d{2,4})$/)
   if (m) {
     const dd = parseInt(m[1], 10)
@@ -167,8 +181,9 @@ function groupSum(
   val: string,
 ): { labels: string[]; values: number[] } {
   const map = new Map<string, number>()
-  for (const r of rows) {
-    const k = String(r[key] ?? '—')
+  for (const r of rows || []) {
+    if (!r) continue
+    const k = safeString(r[key] ?? '—') || '—'
     const v = parseNumber(r[val]) ?? 0
     map.set(k, (map.get(k) ?? 0) + v)
   }
@@ -180,12 +195,8 @@ export function generateDashboard(sheet: Sheet, sheetIndex: number): DashboardSt
   const widgets: Widget[] = []
   const rows = sheet.rows || []
   const cols = sheet.columns || []
-  const byName = (n: string) => cols.find((c) => c.name.toLowerCase() === n.toLowerCase())
-  const has = (re: RegExp) => cols.some((c) => re.test(c.name.toLowerCase()))
-  const findCol = (re: RegExp) => cols.find((c) => re.test(c.name.toLowerCase()))
-  const isCurrency = (c?: Column) => c?.type === 'currency'
-  const isDate = (c?: Column) => c?.type === 'date'
-  const isText = (c?: Column) => c?.type === 'text'
+
+  const findCol = (re: RegExp) => cols.find((c) => re.test(getColName(c).toLowerCase()))
 
   let y = 0
   const add = (w: Omit<Widget, 'y'>) => {
@@ -194,7 +205,6 @@ export function generateDashboard(sheet: Sheet, sheetIndex: number): DashboardSt
 
   const currencyCol = findCol(/receita|venda|faturamento|revenue|total/i)
   const profitCol = findCol(/lucro|profit/i)
-  const costCol = findCol(/custo|cost/i)
   const qtyCol = findCol(/qtd|quant|qtde|quantidade|unidades/i)
   const dateCol = findCol(/data|date/i)
   const categoryCol = findCol(/categoria|category/i)
@@ -207,7 +217,6 @@ export function generateDashboard(sheet: Sheet, sheetIndex: number): DashboardSt
     c ? rows.reduce((acc, r) => acc + (parseNumber(r[c.name]) ?? 0), 0) : 0
   const revenue = sumCol(currencyCol)
   const profit = sumCol(profitCol)
-  const qty = sumCol(qtyCol)
 
   // KPI: Receita total
   if (currencyCol && revenue > 0) {
@@ -265,7 +274,7 @@ export function generateDashboard(sheet: Sheet, sheetIndex: number): DashboardSt
     const map = new Map<string, number>()
     for (const r of rows) {
       const d = parseDate(r[dateCol.name])
-      const k = d ? monthKey(d) : String(r[dateCol.name])
+      const k = d ? monthKey(d) : safeString(r[dateCol.name])
       map.set(k, (map.get(k) ?? 0) + (parseNumber(r[currencyCol.name]) ?? 0))
     }
     const sorted = [...map.entries()].sort((a, b) => (a[0] < b[0] ? -1 : 1))
@@ -326,7 +335,7 @@ export function generateDashboard(sheet: Sheet, sheetIndex: number): DashboardSt
   if (statusCol) {
     const map = new Map<string, number>()
     for (const r of rows) {
-      const k = String(r[statusCol.name] ?? '—')
+      const k = safeString(r[statusCol.name] ?? '—') || '—'
       map.set(k, (map.get(k) ?? 0) + 1)
     }
     add({
@@ -344,7 +353,7 @@ export function generateDashboard(sheet: Sheet, sheetIndex: number): DashboardSt
   if (currencyCol && clientCol) {
     const map = new Map<string, number>()
     for (const r of rows) {
-      const k = String(r[clientCol.name] ?? '—')
+      const k = safeString(r[clientCol.name] ?? '—') || '—'
       map.set(k, (map.get(k) ?? 0) + (parseNumber(r[currencyCol.name]) ?? 0))
     }
     const sorted = [...map.entries()].sort((a, b) => b[1] - a[1]).slice(0, 8)
@@ -368,7 +377,7 @@ export function generateDashboard(sheet: Sheet, sheetIndex: number): DashboardSt
     const map = new Map<string, number>()
     for (const r of rows) {
       const d = parseDate(r[dateCol.name])
-      const k = d ? monthKey(d) : String(r[dateCol.name])
+      const k = d ? monthKey(d) : safeString(r[dateCol.name])
       map.set(k, (map.get(k) ?? 0) + (parseNumber(r[profitCol.name]) ?? 0))
     }
     const sorted = [...map.entries()].sort((a, b) => (a[0] < b[0] ? -1 : 1))
@@ -504,5 +513,5 @@ export function applyAgentAction(
 }
 
 export function findAgentColumn(sheet: Sheet, re: RegExp): Column | undefined {
-  return (sheet.columns || []).find((c) => re.test(c.name.toLowerCase()))
+  return (sheet.columns || []).find((c) => re.test(getColName(c).toLowerCase()))
 }

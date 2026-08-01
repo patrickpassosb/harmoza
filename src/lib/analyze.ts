@@ -18,26 +18,61 @@ export interface Analysis {
   hasDate: boolean
 }
 
-function num(v: CellValue): number {
-  if (typeof v === 'number') return v
+function safeString(v: unknown): string {
+  if (v === null || v === undefined) return ''
+  return String(v).trim()
+}
+
+function num(v: CellValue | unknown): number {
+  if (typeof v === 'number') return isNaN(v) ? 0 : v
   if (typeof v === 'string') {
+    if (!v.trim()) return 0
     const n = parseFloat(v.replace(/[R$\s.]/g, '').replace(',', '.'))
     return Number.isFinite(n) ? n : 0
   }
   return 0
 }
-function str(v: CellValue): string {
-  if (v === null || v === undefined) return ''
-  return String(v)
+
+function getColName(c: unknown): string {
+  if (!c) return ''
+  if (typeof c === 'string') return c
+  if (typeof c === 'object' && 'name' in c) return safeString((c as { name: unknown }).name)
+  return safeString(c)
+}
+
+function getCell(r: unknown, colName: string, cols: unknown[]): unknown {
+  if (!r) return null
+  if (Array.isArray(r)) {
+    const idx = cols.findIndex((c) => getColName(c).toLowerCase() === colName.toLowerCase())
+    return idx >= 0 ? r[idx] : null
+  }
+  if (typeof r === 'object') {
+    const rec = r as Record<string, unknown>
+    if (colName in rec) return rec[colName]
+    const matchKey = Object.keys(rec).find((k) => k.toLowerCase() === colName.toLowerCase())
+    return matchKey ? rec[matchKey] : null
+  }
+  return null
 }
 
 export function analyzeSheet(sheet: Sheet): Analysis {
-  const cols = sheet.columns
-  const rows = sheet.rows
-  const findCol = (names: string[]) =>
-    cols.find((c) => names.some((n) => c.toLowerCase().includes(n)))
+  const cols = sheet.columns || []
+  const rows = sheet.rows || []
 
-  const revenueCol = findCol(['receita', 'receita total', 'vendas', 'faturamento', 'valor total'])
+  const findCol = (names: string[]) =>
+    cols.find((c) => {
+      const cn = getColName(c).toLowerCase()
+      return names.some((n) => cn.includes(n.toLowerCase()))
+    })
+
+  const revenueCol = findCol([
+    'receita',
+    'receita total',
+    'vendas',
+    'faturamento',
+    'valor total',
+    'valor',
+  ])
   const profitCol = findCol(['lucro', 'margem', 'resultado'])
   const dateCol = findCol(['data', 'dia', 'mês', 'mes', 'competência'])
   const categoryCol = findCol(['categoria', 'departamento', 'segmento', 'grupo'])
@@ -47,11 +82,21 @@ export function analyzeSheet(sheet: Sheet): Analysis {
   const statusCol = findCol(['status', 'situação', 'situacao', 'estado do pedido'])
   const qtyCol = findCol(['quantidade', 'qtd', 'qtde', 'unidades'])
 
-  const revenue = revenueCol
-    ? rows.reduce((s, r) => s + num(r[cols.indexOf(revenueCol)]), 0)
+  const revenueColName = getColName(revenueCol)
+  const profitColName = getColName(profitCol)
+  const dateColName = getColName(dateCol)
+  const categoryColName = getColName(categoryCol)
+  const productColName = getColName(productCol)
+  const clientColName = getColName(clientCol)
+  const regionColName = getColName(regionCol)
+  const statusColName = getColName(statusCol)
+  const qtyColName = getColName(qtyCol)
+
+  const revenue = revenueColName
+    ? rows.reduce((s, r) => s + num(getCell(r, revenueColName, cols)), 0)
     : undefined
-  const profit = profitCol
-    ? rows.reduce((s, r) => s + num(r[cols.indexOf(profitCol)]), 0)
+  const profit = profitColName
+    ? rows.reduce((s, r) => s + num(getCell(r, profitColName, cols)), 0)
     : undefined
   const orderCount = rows.length
 
@@ -59,16 +104,16 @@ export function analyzeSheet(sheet: Sheet): Analysis {
     totalRevenue: revenue,
     totalProfit: profit,
     orderCount,
-    hasRevenue: !!revenueCol,
-    hasProfit: !!profitCol,
-    hasDate: !!dateCol,
+    hasRevenue: !!revenueColName,
+    hasProfit: !!profitColName,
+    hasDate: !!dateColName,
   }
   if (revenue !== undefined && orderCount > 0) analysis.avgTicket = revenue / orderCount
 
-  if (dateCol) {
+  if (dateColName) {
     const byMonth = new Map<string, number>()
     for (const r of rows) {
-      const raw = str(r[cols.indexOf(dateCol)])
+      const raw = safeString(getCell(r, dateColName, cols))
       let key = raw
       const d = new Date(raw)
       if (!Number.isNaN(d.getTime()))
@@ -77,31 +122,37 @@ export function analyzeSheet(sheet: Sheet): Analysis {
         const m = raw.match(/(\d{4})[-/](\d{1,2})/)
         if (m) key = `${m[1]}-${String(Number(m[2])).padStart(2, '0')}`
       }
-      const val = revenueCol ? num(r[cols.indexOf(revenueCol)]) : 1
+      const val = revenueColName ? num(getCell(r, revenueColName, cols)) : 1
       byMonth.set(key, (byMonth.get(key) || 0) + val)
     }
     analysis.monthlyRevenue = [...byMonth.entries()]
       .sort((a, b) => (a[0] < b[0] ? -1 : 1))
-      .map(([label, value]) => ({ label: label.slice(0, 4) + '/' + label.slice(5, 7), value }))
+      .map(([label, value]) => ({
+        label: label.length >= 7 ? label.slice(0, 4) + '/' + label.slice(5, 7) : label,
+        value,
+      }))
   }
 
-  if (categoryCol && revenueCol) {
+  if (categoryColName && revenueColName) {
     const byCat = new Map<string, number>()
     for (const r of rows) {
-      const k = str(r[cols.indexOf(categoryCol)]) || 'Sem categoria'
-      byCat.set(k, (byCat.get(k) || 0) + num(r[cols.indexOf(revenueCol)]))
+      const k = safeString(getCell(r, categoryColName, cols)) || 'Sem categoria'
+      byCat.set(k, (byCat.get(k) || 0) + num(getCell(r, revenueColName, cols)))
     }
     analysis.categoryRevenue = [...byCat.entries()]
       .sort((a, b) => b[1] - a[1])
       .map(([label, value]) => ({ label, value }))
   }
 
-  if (productCol) {
+  if (productColName) {
     const byProd = new Map<string, number>()
-    const metricCol = revenueCol || qtyCol
+    const metricColName = revenueColName || qtyColName
     for (const r of rows) {
-      const k = str(r[cols.indexOf(productCol)]) || 'Sem produto'
-      byProd.set(k, (byProd.get(k) || 0) + (metricCol ? num(r[cols.indexOf(metricCol)]) : 1))
+      const k = safeString(getCell(r, productColName, cols)) || 'Sem produto'
+      byProd.set(
+        k,
+        (byProd.get(k) || 0) + (metricColName ? num(getCell(r, metricColName, cols)) : 1),
+      )
     }
     analysis.topProducts = [...byProd.entries()]
       .sort((a, b) => b[1] - a[1])
@@ -109,11 +160,11 @@ export function analyzeSheet(sheet: Sheet): Analysis {
       .map(([label, value]) => ({ label, value }))
   }
 
-  if (clientCol && revenueCol) {
+  if (clientColName && revenueColName) {
     const byClient = new Map<string, number>()
     for (const r of rows) {
-      const k = str(r[cols.indexOf(clientCol)]) || 'Sem cliente'
-      byClient.set(k, (byClient.get(k) || 0) + num(r[cols.indexOf(revenueCol)]))
+      const k = safeString(getCell(r, clientColName, cols)) || 'Sem cliente'
+      byClient.set(k, (byClient.get(k) || 0) + num(getCell(r, revenueColName, cols)))
     }
     analysis.topClients = [...byClient.entries()]
       .sort((a, b) => b[1] - a[1])
@@ -121,21 +172,21 @@ export function analyzeSheet(sheet: Sheet): Analysis {
       .map(([label, value]) => ({ label, value }))
   }
 
-  if (regionCol && revenueCol) {
+  if (regionColName && revenueColName) {
     const byRegion = new Map<string, number>()
     for (const r of rows) {
-      const k = str(r[cols.indexOf(regionCol)]) || 'Sem região'
-      byRegion.set(k, (byRegion.get(k) || 0) + num(r[cols.indexOf(revenueCol)]))
+      const k = safeString(getCell(r, regionColName, cols)) || 'Sem região'
+      byRegion.set(k, (byRegion.get(k) || 0) + num(getCell(r, regionColName, cols)))
     }
     analysis.regionRevenue = [...byRegion.entries()]
       .sort((a, b) => b[1] - a[1])
       .map(([label, value]) => ({ label, value }))
   }
 
-  if (statusCol) {
+  if (statusColName) {
     const byStatus = new Map<string, number>()
     for (const r of rows) {
-      const k = str(r[cols.indexOf(statusCol)]) || 'Sem status'
+      const k = safeString(getCell(r, statusColName, cols)) || 'Sem status'
       byStatus.set(k, (byStatus.get(k) || 0) + 1)
     }
     analysis.statusCounts = [...byStatus.entries()]
@@ -163,13 +214,10 @@ export function buildDashboard(
     add(
       {
         id: 'cmp-kpi-revenue',
-        type: 'kpi',
+        kind: 'kpi',
         title: 'Receita total',
-        columnY: 'receita',
-        aggregation: 'sum',
-        format: 'currency',
-        labels: ['Receita total'],
-        values: [analysis.totalRevenue],
+        config: { currency: true, aggregation: 'sum' },
+        data: [{ label: 'Receita total', value: analysis.totalRevenue }],
       },
       3,
       2,
@@ -180,13 +228,10 @@ export function buildDashboard(
     add(
       {
         id: 'cmp-kpi-profit',
-        type: 'kpi',
+        kind: 'kpi',
         title: 'Lucro total',
-        columnY: 'lucro',
-        aggregation: 'sum',
-        format: 'currency',
-        labels: ['Lucro total'],
-        values: [analysis.totalProfit],
+        config: { currency: true, aggregation: 'sum' },
+        data: [{ label: 'Lucro total', value: analysis.totalProfit }],
       },
       3,
       2,
@@ -197,13 +242,10 @@ export function buildDashboard(
     add(
       {
         id: 'cmp-kpi-ticket',
-        type: 'kpi',
+        kind: 'kpi',
         title: 'Ticket médio',
-        columnY: 'receita',
-        aggregation: 'avg',
-        format: 'currency',
-        labels: ['Ticket médio'],
-        values: [analysis.avgTicket],
+        config: { currency: true, aggregation: 'avg' },
+        data: [{ label: 'Ticket médio', value: analysis.avgTicket }],
       },
       3,
       2,
@@ -214,13 +256,10 @@ export function buildDashboard(
     add(
       {
         id: 'cmp-kpi-orders',
-        type: 'kpi',
+        kind: 'kpi',
         title: 'Pedidos',
-        columnY: 'quantidade',
-        aggregation: 'count',
-        format: 'number',
-        labels: ['Pedidos'],
-        values: [analysis.orderCount],
+        config: { currency: false, aggregation: 'count' },
+        data: [{ label: 'Pedidos', value: analysis.orderCount }],
       },
       3,
       2,
@@ -231,14 +270,10 @@ export function buildDashboard(
     add(
       {
         id: 'cmp-line-monthly',
-        type: 'line',
+        kind: 'line',
         title: 'Receita por mês',
-        columnX: 'data',
-        columnY: 'receita',
-        aggregation: 'sum',
-        format: 'currency',
-        labels: analysis.monthlyRevenue.map((m) => m.label),
-        values: analysis.monthlyRevenue.map((m) => m.value),
+        config: { currency: true },
+        data: analysis.monthlyRevenue,
       },
       6,
       3,
@@ -249,14 +284,10 @@ export function buildDashboard(
     add(
       {
         id: 'cmp-pie-category',
-        type: 'pie',
+        kind: 'pie',
         title: 'Vendas por categoria',
-        columnX: 'categoria',
-        columnY: 'receita',
-        aggregation: 'sum',
-        format: 'currency',
-        labels: analysis.categoryRevenue.map((c) => c.label),
-        values: analysis.categoryRevenue.map((c) => c.value),
+        config: { currency: true },
+        data: analysis.categoryRevenue,
       },
       6,
       3,
@@ -267,13 +298,10 @@ export function buildDashboard(
     add(
       {
         id: 'cmp-ranking-products',
-        type: 'ranking',
+        kind: 'ranking',
         title: 'Ranking de produtos',
-        columnX: 'produto',
-        columnY: 'receita',
-        aggregation: 'sum',
-        format: 'currency',
-        rows: analysis.topProducts.map((p) => ({ label: p.label, value: p.value })),
+        config: { currency: true },
+        data: analysis.topProducts,
       },
       6,
       3,
@@ -284,13 +312,10 @@ export function buildDashboard(
     add(
       {
         id: 'cmp-table-clients',
-        type: 'table',
+        kind: 'table',
         title: 'Clientes com maior valor',
-        columnX: 'cliente',
-        columnY: 'receita',
-        aggregation: 'sum',
-        format: 'currency',
-        rows: analysis.topClients.map((c) => ({ label: c.label, value: c.value })),
+        config: { currency: true },
+        data: analysis.topClients,
       },
       6,
       3,
@@ -301,14 +326,10 @@ export function buildDashboard(
     add(
       {
         id: 'cmp-bar-region',
-        type: 'bar',
+        kind: 'bar',
         title: 'Receita por região',
-        columnX: 'região',
-        columnY: 'receita',
-        aggregation: 'sum',
-        format: 'currency',
-        labels: analysis.regionRevenue.map((r) => r.label),
-        values: analysis.regionRevenue.map((r) => r.value),
+        config: { currency: true },
+        data: analysis.regionRevenue,
       },
       6,
       3,

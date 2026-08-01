@@ -1,14 +1,16 @@
 // HARMOZA — área de upload de planilha (.xlsx) com estado
 import { useCallback, useRef, useState } from 'react'
+import { useNavigate } from 'react'
 import { UploadCloud, Loader2, FileSpreadsheet, AlertTriangle, CheckCircle2 } from 'lucide-react'
-import { HarmozaLogo } from './Logo'
+import { useHarmoza } from '@/lib/store'
 
 interface Props {
-  onLoaded: (wb: { fileName: string; sheets: import('@/lib/types').SheetData[] }) => void
-  onDemo: () => void
+  onLoaded?: (wb: { fileName: string; sheets: import('@/lib/types').SheetData[] }) => void
+  onDemo?: () => void
   loading?: boolean
   error?: string | null
   onDismissError?: () => void
+  onSuccessClose?: () => void
 }
 
 export function ExcelUpload({
@@ -17,11 +19,14 @@ export function ExcelUpload({
   loading = false,
   error = null,
   onDismissError,
+  onSuccessClose,
 }: Props) {
+  const { importFile, loadDemo, setView } = useHarmoza()
   const [dragOver, setDragOver] = useState(false)
   const [successName, setSuccessName] = useState<string | null>(null)
-  const inputRef = useRef<HTMLInputElement>(null)
   const [busy, setBusy] = useState(false)
+  const inputRef = useRef<HTMLInputElement>(null)
+  const navigate = useNavigate()
 
   const handleFiles = useCallback(
     async (file?: File) => {
@@ -33,11 +38,11 @@ export function ExcelUpload({
       }
       setBusy(true)
       try {
-        const mod = await import('@/lib/excel')
-        const { parseExcelFile } = mod
-        const res = await parseExcelFile(file)
-        onLoaded({ fileName: res.workbook.fileName, sheets: res.workbook.sheets })
-        setSuccessName(res.workbook.fileName)
+        await importFile(file)
+        setSuccessName(file.name)
+        setView('sheet')
+        navigate('/')
+        if (onSuccessClose) onSuccessClose()
       } catch (err) {
         if (onDismissError) onDismissError()
         alert(err instanceof Error ? err.message : 'Não foi possível processar o arquivo.')
@@ -45,8 +50,25 @@ export function ExcelUpload({
         setBusy(false)
       }
     },
-    [onLoaded, onDismissError],
+    [importFile, setView, navigate, onDismissError, onSuccessClose],
   )
+
+  const handleDemoClick = async () => {
+    if (onDemo) {
+      onDemo()
+      return
+    }
+    setBusy(true)
+    try {
+      await loadDemo()
+      setSuccessName('demonstracao_harmoza.xlsx')
+      setView('sheet')
+      navigate('/')
+      if (onSuccessClose) onSuccessClose()
+    } finally {
+      setBusy(false)
+    }
+  }
 
   return (
     <div className="animate-fade-in">
@@ -102,7 +124,7 @@ export function ExcelUpload({
       </div>
 
       <button
-        onClick={onDemo}
+        onClick={handleDemoClick}
         disabled={loading || busy}
         className="flex w-full items-center justify-center gap-2 rounded-xl border border-[#0F766E]/30 bg-[#0F766E]/5 px-4 py-2.5 text-sm font-semibold text-[#0F766E] transition-colors hover:bg-[#0F766E]/10 disabled:opacity-50"
       >

@@ -3,27 +3,29 @@
    O arquivo é lido no navegador (SheetJS) — não sai da máquina. */
 
 import { useCallback, useRef, useState } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { UploadCloud, FileSpreadsheet, Loader2, Sparkles, X, CheckCircle2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
-import { parseWorkbookFile } from '@/lib/excelParser'
-import type { Sheet } from '@/lib/harmoza'
+import { useHarmoza } from '@/lib/store'
 import { cn } from '@/lib/utils'
 
 type UploadStatus = 'idle' | 'loading' | 'success' | 'error'
 
 interface UploadPanelProps {
-  onImported: (sheets: Sheet[], fileName: string) => void
-  onLoadDemo: () => Promise<void>
-  demoLoading: boolean
+  onImported?: (sheets: unknown[], fileName: string) => void
+  onLoadDemo?: () => Promise<void>
+  demoLoading?: boolean
+  onSuccessClose?: () => void
 }
 
-export function UploadPanel({ onImported, onLoadDemo, demoLoading }: UploadPanelProps) {
+export function UploadPanel({ onSuccessClose }: UploadPanelProps) {
+  const { importFile, loadDemo, setView } = useHarmoza()
   const [dragOver, setDragOver] = useState(false)
   const [status, setStatus] = useState<UploadStatus>('idle')
   const [error, setError] = useState('')
   const [fileName, setFileName] = useState('')
-  const [preview, setPreview] = useState<{ name: string; columns: number; rows: number }[]>([])
   const inputRef = useRef<HTMLInputElement>(null)
+  const navigate = useNavigate()
 
   const handleFile = useCallback(
     async (file: File) => {
@@ -36,22 +38,17 @@ export function UploadPanel({ onImported, onLoadDemo, demoLoading }: UploadPanel
       setError('')
       setFileName(file.name)
       try {
-        const { workbook } = await parseWorkbookFile(file)
-        setPreview(
-          workbook.sheets.map((s: Sheet) => ({
-            name: s.name,
-            columns: s.columns.length,
-            rows: s.rows.length,
-          })),
-        )
+        await importFile(file)
         setStatus('success')
-        onImported(workbook.sheets, workbook.fileName)
+        setView('sheet')
+        navigate('/')
+        if (onSuccessClose) onSuccessClose()
       } catch (err) {
         setStatus('error')
         setError(err instanceof Error ? err.message : 'Não foi possível processar o arquivo.')
       }
     },
-    [onImported],
+    [importFile, setView, navigate, onSuccessClose],
   )
 
   const onDrop = useCallback(
@@ -69,8 +66,11 @@ export function UploadPanel({ onImported, onLoadDemo, demoLoading }: UploadPanel
     setError('')
     setFileName('demonstracao_harmoza.xlsx')
     try {
-      await onLoadDemo()
+      await loadDemo()
       setStatus('success')
+      setView('sheet')
+      navigate('/')
+      if (onSuccessClose) onSuccessClose()
     } catch (err) {
       setStatus('error')
       setError(err instanceof Error ? err.message : 'Falha ao carregar a demonstração.')
@@ -140,9 +140,9 @@ export function UploadPanel({ onImported, onLoadDemo, demoLoading }: UploadPanel
         variant="outline"
         className="w-full"
         onClick={handleDemo}
-        disabled={demoLoading || status === 'loading'}
+        disabled={status === 'loading'}
       >
-        {demoLoading ? (
+        {status === 'loading' ? (
           <Loader2 className="h-4 w-4 animate-spin" />
         ) : (
           <Sparkles className="h-4 w-4 text-[#D97706]" />
@@ -155,14 +155,6 @@ export function UploadPanel({ onImported, onLoadDemo, demoLoading }: UploadPanel
           <div className="flex items-center gap-2 font-medium">
             <CheckCircle2 className="h-4 w-4" /> {fileName} importada com sucesso!
           </div>
-          <ul className="mt-2 space-y-1">
-            {preview.map((p) => (
-              <li key={p.name} className="flex items-center gap-2 text-emerald-700">
-                <FileSpreadsheet className="h-3.5 w-3.5" />
-                {p.name} — {p.columns} colunas, {p.rows} linhas
-              </li>
-            ))}
-          </ul>
         </div>
       )}
 

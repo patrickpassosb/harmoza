@@ -1,40 +1,41 @@
-// HARMOZA — tipos centrais
+// HARMOZA — tipos centrais da aplicação
 
-export type CellValue = string | number | boolean | Date | null
+export type ColumnType = 'text' | 'number' | 'currency' | 'percent' | 'date'
 
-export interface ColumnInfo {
+export interface ColumnMeta {
   name: string
-  type: 'text' | 'number' | 'currency' | 'percent' | 'date'
-  // amostra de valores para preview/detecção
-  sample: CellValue[]
+  type: ColumnType
 }
 
-export interface Sheet {
+export type CellValue = string | number | null
+
+export interface SheetData {
   id: string
   name: string
-  columns: string[] // cabeçalhos
-  rows: CellValue[][] // dados (sem cabeçalho)
-  columnTypes: Record<string, ColumnInfo['type']>
+  columns: ColumnMeta[]
+  rows: CellValue[][]
 }
 
-export type DashChartType = 'kpi' | 'bar' | 'line' | 'pie' | 'table' | 'ranking'
+export interface Workbook {
+  id: string
+  fileName: string
+  sheets: SheetData[]
+  activeSheetId: string
+}
+
+export type DashKind = 'kpi' | 'bar' | 'line' | 'pie' | 'table' | 'ranking'
 
 export interface DashComponent {
   id: string
-  type: DashChartType
+  kind: DashKind
   title: string
-  // config de origem (coluna etc.)
-  columnX?: string
-  columnY?: string
-  aggregation?: 'sum' | 'avg' | 'count'
-  format?: 'currency' | 'number' | 'percent' | 'date'
-  // dados pré-calculados para render (labels + values)
-  labels?: string[]
-  values?: number[]
-  rows?: { label: string; value: number; extra?: string }[]
+  subtitle?: string
+  // dados agregados prontos para render (evita recomputar)
+  data?: { label: string; value: number }[]
+  config: Record<string, unknown>
 }
 
-export interface DashboardLayoutItem {
+export interface DashLayoutItem {
   i: string
   x: number
   y: number
@@ -42,40 +43,27 @@ export interface DashboardLayoutItem {
   h: number
 }
 
-export interface WorkBookState {
-  fileName: string
-  sheets: Sheet[]
-  activeSheetId: string
-  dashboard: DashComponent[]
-  layout: DashboardLayoutItem[]
-  // metadados de análise (para o agente)
-  analysis?: {
-    totalRevenue?: number
-    totalProfit?: number
-    avgTicket?: number
-    orderCount?: number
-    monthlyRevenue?: { label: string; value: number }[]
-    categoryRevenue?: { label: string; value: number }[]
-    topProducts?: { label: string; value: number }[]
-    topClients?: { label: string; value: number }[]
-    regionRevenue?: { label: string; value: number }[]
-    statusCounts?: { label: string; value: number }[]
-  }
-}
+export type ViewMode = 'sheet' | 'dashboard'
 
-export interface ChatMessage {
+export type ImportState =
+  | 'idle' // nenhum arquivo importado
+  | 'loading' // arquivo sendo carregado
+  | 'success' // importado com sucesso
+  | 'error' // erro na importação
+
+export interface AgentMessage {
   id: string
   role: 'user' | 'assistant'
   content: string
-  // ação executada (para o agente mostrar o que mudou)
   action?: string
-  createdAt: number
+  created: number
 }
 
-export type AgentState = 'idle' | 'listening' | 'processing' | 'executing' | 'done' | 'error'
-
-export interface AgentResult {
-  action: string
-  params: Record<string, unknown>
-  reply: string
-}
+export type AgentStatus =
+  | 'idle' // pronto
+  | 'listening' // ouvindo
+  | 'processing' // processando
+  | 'executing' // executando ação
+  | 'done' // ação concluída
+  | 'unclear' // comando não compreendido
+  | 'error'

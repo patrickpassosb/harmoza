@@ -1,8 +1,5 @@
-/* HARMOZA — Global styles
-   Identidade: azul profundo #172554, teal #0F766E, laranja #D97706, roxo #6D28D9
-   Fundo: off-white #F8F7F4. Fonte: Inter. */
-
-@import url('https://fonts.googleapis.com/css2?family=Inter:opsz,wght@14..32,400;14..32,500;14..32,600;14..32,700;14..32,800&display=swap');
+/* HARMOZA — Global styles, theme, font, animations */
+@import url('https://fonts.googleapis.com/css2?family=Inter:ital,wght@0,100..900;1,100..900&display=swap');
 
 @tailwind base;
 @tailwind components;
@@ -10,8 +7,9 @@
 
 @layer base {
   :root {
-    --background: 40 27% 97%; /* #F8F7F4 */
-    --foreground: 222 47% 11%; /* #172554 próximo */
+    /* HARMOZA palette (light) */
+    --background: 40 33% 97%; /* off-white #F8F7F4 */
+    --foreground: 222 47% 11%; /* deep navy #172554-ish */
 
     --card: 0 0% 100%;
     --card-foreground: 222 47% 11%;
@@ -20,91 +18,135 @@
     --popover-foreground: 222 47% 11%;
 
     --primary: 222 47% 21%; /* #172554 */
-    --primary-foreground: 210 40% 98%;
+    --primary-foreground: 0 0% 100%;
 
-    --secondary: 220 16% 90%;
+    --secondary: 40 33% 95%;
     --secondary-foreground: 222 47% 11%;
 
-    --muted: 220 16% 93%;
-    --muted-foreground: 218 12% 42%;
+    --muted: 40 20% 94%;
+    --muted-foreground: 215 16% 45%;
 
-    --accent: 172 58% 25%; /* #0F766E */
-    --accent-foreground: 0 0% 100%;
+    --accent: 40 33% 92%;
+    --accent-foreground: 222 47% 11%;
 
     --destructive: 0 72% 51%;
-    --destructive-foreground: 210 40% 98%;
+    --destructive-foreground: 0 0% 100%;
 
-    --border: 214 22% 86%;
-    --input: 214 22% 86%;
+    --border: 214 25% 88%;
+    --input: 214 25% 86%;
     --ring: 222 47% 21%;
 
     --radius: 0.75rem;
 
-    --sidebar-background: 222 47% 12%; /* fundo escuro da sidebar */
-    --sidebar-foreground: 210 20% 92%;
-    --sidebar-primary: 210 40% 98%;
+    --sidebar-background: 222 47% 16%; /* navy sidebar */
+    --sidebar-foreground: 210 40% 96%;
+    --sidebar-primary: 0 0% 100%;
     --sidebar-primary-foreground: 222 47% 21%;
-    --sidebar-accent: 222 47% 20%;
+    --sidebar-accent: 222 40% 24%;
     --sidebar-accent-foreground: 210 40% 98%;
-    --sidebar-border: 222 47% 18%;
-    --sidebar-ring: 172 58% 40%;
+    --sidebar-border: 222 40% 24%;
+    --sidebar-ring: 222 47% 21%;
 
-    --chart-1: 222 47% 21%; /* azul HARMOZA */
-    --chart-2: 172 58% 25%; /* teal */
-    --chart-3: 28 87% 46%; /* laranja */
-    --chart-4: 262 58% 44%; /* roxo */
-    --chart-5: 196 68% 42%; /* azul claro */
+    /* HARMOZA chart palette — azul, teal, laranja, roxo, dourado */
+    --chart-1: 222 47% 21%; /* navy */
+    --chart-2: 189 100% 33%; /* teal */
+    --chart-3: 32 95% 44%; /* orange */
+    --chart-4: 270 65% 51%; /* purple */
+    --chart-5: 42 90% 50%; /* gold */
   }
 
   .dark {
-    --background: 222 47% 8%;
-    --foreground: 210 20% 92%;
-    --card: 222 47% 12%;
-    --card-foreground: 210 20% 92%;
-    --popover: 222 47% 12%;
-    --popover-foreground: 210 20% 92%;
-    --primary: 210 40% 98%;
-    --primary-foreground: 222 47% 21%;
-    --secondary: 222 47% 18%;
-    --secondary-foreground: 210 20% 92%;
-    --muted: 222 47% 16%;
-    --muted-foreground: 215 20% 70%;
-    --accent: 172 58% 30%;
-    --accent-foreground: 0 0% 100%;
-    --destructive: 0 62% 45%;
-    --destructive-foreground: 210 40% 98%;
-    --border: 222 47% 20%;
-    --input: 222 47% 20%;
-    --ring: 172 58% 40%;
+    --background: 222 47% 6%;
+    --foreground: 210 40% 96%;
+
+    --card: 222 47% 9%;
+    --card-foreground: 210 40% 96%;
+
+    --popover: 222 47% 9%;
+    --popover-foreground: 210 40% 96%;
+
+    --primary: 210 40% 96%;
+    --primary-foreground: 222 47% 11%;
+
+    --secondary: 222 40% 14%;
+    --secondary-foreground: 210 40% 96%;
+
+    --muted: 222 40% 14%;
+    --muted-foreground: 215 20% 60%;
+
+    --accent: 222 40% 16%;
+    --accent-foreground: 210 40% 96%;
+
+    --destructive: 0 72% 51%;
+    --destructive-foreground: 0 0% 100%;
+
+    --border: 222 40% 16%;
+    --input: 222 40% 16%;
+    --ring: 214 30% 70%;
+
     --sidebar-background: 222 47% 10%;
-    --sidebar-foreground: 210 20% 92%;
-    --sidebar-primary: 210 40% 98%;
-    --sidebar-primary-foreground: 222 47% 21%;
-    --sidebar-accent: 222 47% 18%;
-    --sidebar-accent-foreground: 210 20% 92%;
-    --sidebar-border: 222 47% 18%;
-    --sidebar-ring: 172 58% 40%;
-    --chart-1: 222 47% 60%;
-    --chart-2: 172 58% 45%;
-    --chart-3: 28 87% 55%;
-    --chart-4: 262 58% 60%;
-    --chart-5: 196 68% 55%;
+    --sidebar-foreground: 210 40% 96%;
+    --sidebar-primary: 210 40% 96%;
+    --sidebar-primary-foreground: 222 47% 11%;
+    --sidebar-accent: 222 40% 16%;
+    --sidebar-accent-foreground: 210 40% 96%;
+    --sidebar-border: 222 40% 16%;
+    --sidebar-ring: 214 30% 70%;
+
+    --chart-1: 210 40% 96%;
+    --chart-2: 189 100% 60%;
+    --chart-3: 32 95% 55%;
+    --chart-4: 270 65% 60%;
+    --chart-5: 42 90% 55%;
   }
 
+  /* NEVER REMOVE THIS */
   section[aria-label='Notifications alt+T'] {
     padding: 0 !important;
     margin: 0 !important;
   }
+
+  * {
+    @apply border-border;
+  }
+  body {
+    @apply bg-background text-foreground antialiased;
+    font-family: 'Inter', system-ui, sans-serif;
+  }
 }
 
 @layer utilities {
-  /* ANIMAÇÕES usadas no HARMOZA */
+  /* KEEP ALL THE ANIMATIONS CLASSES THAT ARE USED BELOW */
+  @keyframes accordion-down {
+    from {
+      height: 0;
+    }
+    to {
+      height: var(--radix-accordion-content-height);
+    }
+  }
+  @keyframes accordion-up {
+    from {
+      height: var(--radix-accordion-content-height);
+    }
+    to {
+      height: 0;
+    }
+  }
   @keyframes fade-in {
     from {
       opacity: 0;
     }
     to {
       opacity: 1;
+    }
+  }
+  @keyframes fade-out {
+    from {
+      opacity: 1;
+    }
+    to {
+      opacity: 0;
     }
   }
   @keyframes fade-in-up {
@@ -117,6 +159,36 @@
       opacity: 1;
     }
   }
+  @keyframes fade-in-down {
+    from {
+      transform: translateY(-10px);
+      opacity: 0;
+    }
+    to {
+      transform: translateY(0);
+      opacity: 1;
+    }
+  }
+  @keyframes fade-out-up {
+    from {
+      transform: translateY(0);
+      opacity: 1;
+    }
+    to {
+      transform: translateY(-10px);
+      opacity: 0;
+    }
+  }
+  @keyframes fade-out-down {
+    from {
+      transform: translateY(0);
+      opacity: 1;
+    }
+    to {
+      transform: translateY(10px);
+      opacity: 0;
+    }
+  }
   @keyframes slide-up {
     from {
       transform: translateY(10px);
@@ -127,41 +199,82 @@
       opacity: 1;
     }
   }
-  @keyframes pulse-dot {
+  @keyframes slide-down {
+    from {
+      transform: translateY(-10px);
+      opacity: 0;
+    }
+    to {
+      transform: translateY(0);
+      opacity: 1;
+    }
+  }
+  @keyframes float {
+    0%,
+    100% {
+      transform: translateY(0);
+    }
+    50% {
+      transform: translateY(-10px);
+    }
+  }
+  @keyframes spotlight {
+    from {
+      opacity: 0;
+      transform: translate(-72%, -62%) scale(0.5);
+    }
+    to {
+      opacity: 1;
+      transform: translate(-50%, -40%) scale(1);
+    }
+  }
+  @keyframes pulse-soft {
     0%,
     100% {
       opacity: 1;
     }
     50% {
-      opacity: 0.35;
+      opacity: 0.55;
     }
   }
+
+  .animate-accordion-down {
+    animation: accordion-down 0.2s ease-out;
+  }
+  .animate-accordion-up {
+    animation: accordion-up 0.2s ease-out;
+  }
   .animate-fade-in {
-    animation: fade-in 0.4s ease-out;
+    animation: fade-in 0.5s ease-out;
+  }
+  .animate-fade-out {
+    animation: fade-out 0.5s ease-out;
   }
   .animate-fade-in-up {
-    animation: fade-in-up 0.45s ease-out;
+    animation: fade-in-up 0.6s ease-out;
+  }
+  .animate-fade-in-down {
+    animation: fade-in-down 0.6s ease-out;
+  }
+  .animate-fade-out-up {
+    animation: fade-out-up 0.6s ease-out;
+  }
+  .animate-fade-out-down {
+    animation: fade-out-down 0.6s ease-out;
   }
   .animate-slide-up {
-    animation: slide-up 0.45s ease-out;
+    animation: slide-up 0.6s ease-out;
   }
-  .animate-pulse-dot {
-    animation: pulse-dot 1.2s ease-in-out infinite;
+  .animate-slide-down {
+    animation: slide-down 0.6s ease-out;
   }
-
-  /* Scrollbar discreto */
-  .harmoza-scroll::-webkit-scrollbar {
-    width: 8px;
-    height: 8px;
+  .animate-float {
+    animation: float 6s ease-in-out infinite;
   }
-  .harmoza-scroll::-webkit-scrollbar-track {
-    background: transparent;
+  .animate-spotlight {
+    animation: spotlight 2s ease forwards;
   }
-  .harmoza-scroll::-webkit-scrollbar-thumb {
-    background: rgba(23, 37, 84, 0.18);
-    border-radius: 8px;
-  }
-  .harmoza-scroll::-webkit-scrollbar-thumb:hover {
-    background: rgba(23, 37, 84, 0.3);
+  .animate-pulse-soft {
+    animation: pulse-soft 2s ease-in-out infinite;
   }
 }

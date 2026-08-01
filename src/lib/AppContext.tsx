@@ -54,12 +54,18 @@ function loadInitial(): AppState {
     const raw = localStorage.getItem(STORAGE_KEY)
     if (!raw) return initialState
     const parsed = JSON.parse(raw) as Partial<AppState>
+    const dashboard =
+      parsed.dashboard &&
+      typeof parsed.dashboard === 'object' &&
+      Array.isArray(parsed.dashboard.widgets)
+        ? parsed.dashboard
+        : { widgets: [] }
     return {
       ...initialState,
       ...parsed,
       workbook: parsed.workbook ?? null,
       sheets: parsed.sheets ?? [],
-      dashboard: parsed.dashboard ?? { widgets: [] },
+      dashboard,
       agentHistory: parsed.agentHistory ?? [],
       saved: true,
     }

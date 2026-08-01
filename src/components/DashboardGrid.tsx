@@ -22,8 +22,8 @@ interface Props {
 }
 
 export function DashboardGrid({
-  components,
-  layout,
+  components = [],
+  layout = [],
   onLayoutChange,
   onRemove,
   onDuplicate,
@@ -32,6 +32,8 @@ export function DashboardGrid({
   generating,
 }: Props) {
   const [dragging, setDragging] = useState(false)
+  const safeComponents = components ?? []
+  const safeLayout = layout ?? []
 
   if (generating) {
     return (
@@ -41,7 +43,7 @@ export function DashboardGrid({
     )
   }
 
-  if (components.length === 0) {
+  if (safeComponents.length === 0) {
     return (
       <div className="flex min-h-[30vh] flex-col items-center justify-center gap-3 rounded-2xl border border-dashed border-border bg-white/60 text-center">
         <p className="text-sm text-muted-foreground">Nenhum componente ainda.</p>
@@ -55,7 +57,7 @@ export function DashboardGrid({
     )
   }
 
-  const layoutForGrid: Layout[] = layout.map((l) => ({ ...l, minW: 2, minH: 1 }))
+  const layoutForGrid: Layout[] = safeLayout.map((l) => ({ ...l, minW: 2, minH: 1 }))
 
   return (
     <div className={dragging ? 'cursor-grabbing' : ''}>
@@ -89,7 +91,7 @@ export function DashboardGrid({
         onResizeStart={() => setDragging(true)}
         onResizeStop={() => setDragging(false)}
       >
-        {components.map((comp) => (
+        {safeComponents.map((comp) => (
           <div key={comp.id} className="h-full">
             <DashCard comp={comp} onRemove={onRemove} onDuplicate={onDuplicate} onMove={onMove} />
           </div>

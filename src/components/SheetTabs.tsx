@@ -1,10 +1,10 @@
 // HARMOZA — abas da planilha (alternar, criar, renomear, excluir)
 import { useState } from 'react'
 import { Plus, Pencil, Trash2, X, Check } from 'lucide-react'
-import type { Sheet } from '@/lib/types'
+import type { SheetData } from '@/lib/types'
 
 interface Props {
-  sheets: Sheet[]
+  sheets: SheetData[]
   activeId: string
   onSelect: (id: string) => void
   onCreate: (name: string) => void

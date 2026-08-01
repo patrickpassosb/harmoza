@@ -1,22 +1,24 @@
-// HARMOZA — tabela estilo planilha, editável
-// Interface compatível com AppShell: (sheet, onChange)
 import { useState } from 'react'
 import { Columns3, Rows3, Trash2 } from 'lucide-react'
-import type { CellValue, Sheet } from '@/lib/types'
+import type { CellValue, SheetData, ColumnMeta } from '@/lib/types'
 import { fmtCell } from '@/lib/format'
 
 interface Props {
-  sheet: Sheet
-  onChange: (sheet: Sheet) => void
+  sheet: SheetData
+  onChange: (sheet: SheetData) => void
 }
 
 export function SheetTable({ sheet, onChange }: Props) {
   const [editing, setEditing] = useState<{ r: number; c: number } | null>(null)
   const [draft, setDraft] = useState('')
 
-  const headers = sheet.columns ?? []
+  const columns = sheet.columns ?? []
   const rows = sheet.rows ?? []
-  const colType = (i: number) => sheet.columnTypes?.[headers[i]] ?? 'text'
+  const colType = (i: number) => columns[i]?.type ?? 'text'
+  const colName = (i: number) => columns[i]?.name ?? ''
+  const headerLabels = columns.map((c) =>
+    c && typeof c === 'object' && 'name' in c ? c.name : String(c ?? ''),
+  )
 
   const updateCell = (r: number, c: number, value: CellValue) => {
     const next = rows.map((row, ri) =>
@@ -25,15 +27,15 @@ export function SheetTable({ sheet, onChange }: Props) {
     onChange({ ...sheet, rows: next })
   }
 
-  const addRow = () => onChange({ ...sheet, rows: [...rows, headers.map(() => null)] })
+  const addRow = () => onChange({ ...sheet, rows: [...rows, columns.map(() => null)] })
 
   const addColumn = () => {
-    const name = `Coluna ${headers.length + 1}`
+    const name = `Coluna ${columns.length + 1}`
+    const newCol: ColumnMeta = { name, type: 'text' }
     onChange({
       ...sheet,
-      columns: [...headers, name],
+      columns: [...columns, newCol],
       rows: rows.map((r) => [...r, null]),
-      columnTypes: { ...(sheet.columnTypes ?? {}), [name]: 'text' },
     })
   }
 
@@ -64,7 +66,7 @@ export function SheetTable({ sheet, onChange }: Props) {
         <span className="text-sm font-semibold text-[#172554]">
           {sheet.name}
           <span className="ml-2 text-xs font-normal text-muted-foreground">
-            {rows.length} linhas · {headers.length} colunas
+            {rows.length} linhas · {columns.length} colunas
           </span>
         </span>
         <div className="flex items-center gap-1.5">
@@ -89,12 +91,12 @@ export function SheetTable({ sheet, onChange }: Props) {
           <thead>
             <tr className="sticky top-0 z-10 bg-[#172554] text-left text-white">
               <th className="w-10 px-2 py-2 text-center text-xs font-medium text-white/70">#</th>
-              {headers.map((h, c) => (
+              {headerLabels.map((label, c) => (
                 <th
                   key={c}
                   className="whitespace-nowrap border-l border-white/10 px-3 py-2 text-xs font-semibold"
                 >
-                  {h}
+                  {label || `Coluna ${c + 1}`}
                   <span className="ml-1.5 text-[10px] font-normal uppercase text-white/50">
                     {typeLabel(colType(c))}
                   </span>
@@ -107,7 +109,7 @@ export function SheetTable({ sheet, onChange }: Props) {
             {rows.length === 0 && (
               <tr>
                 <td
-                  colSpan={headers.length + 2}
+                  colSpan={columns.length + 2}
                   className="px-4 py-10 text-center text-sm text-muted-foreground"
                 >
                   Esta aba está vazia. Adicione linhas ou colunas.

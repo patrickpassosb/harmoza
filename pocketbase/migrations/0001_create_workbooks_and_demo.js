@@ -6,17 +6,17 @@ migrate(
     // ------------------------------------------------------------------
     let demo = null
     try {
-      demo = $app.findFirstRecordByData('users', 'email', 'demo@harmoza.com.br')
+      demo = app.findFirstRecordByData('users', 'email', 'demo@harmoza.com.br')
     } catch (_) {}
     if (!demo) {
-      const col = $app.findCollectionByNameOrId('users')
+      const col = app.findCollectionByNameOrId('users')
       const rec = new Record(col, {
         email: 'demo@harmoza.com.br',
         password: 'demo1234',
         passwordConfirm: 'demo1234',
-        name: 'Conta Demo HARMOZA',
+        name: 'Equipe HARMOZA',
       })
-      $app.save(rec)
+      app.save(rec)
     }
 
     // ------------------------------------------------------------------
@@ -46,16 +46,16 @@ migrate(
         { name: 'updated', type: 'autodate', onCreate: true, onUpdate: true },
       ],
     })
-    $app.save(wb)
+    app.save(wb)
   },
   (app) => {
     try {
-      const col = $app.findCollectionByNameOrId('workbooks')
-      $app.delete(col)
+      const col = app.findCollectionByNameOrId('workbooks')
+      app.delete(col)
     } catch (_) {}
     try {
-      const demo = $app.findFirstRecordByData('users', 'email', 'demo@harmoza.com.br')
-      if (demo) $app.delete(demo)
+      const demo = app.findFirstRecordByData('users', 'email', 'demo@harmoza.com.br')
+      if (demo) app.delete(demo)
     } catch (_) {}
   },
 )

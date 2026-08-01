@@ -92,7 +92,7 @@ export function AppShell({ initialView }: { initialView?: 'sheet' | 'dashboard' 
           </div>
         )}
         <main className="flex-1 overflow-y-auto">
-          {view === 'sheet' && activeSheet && (
+          {activeSheet && (
             <div className="px-5 py-4">
               <SheetTabs
                 sheets={workbook.sheets}
@@ -103,29 +103,32 @@ export function AppShell({ initialView }: { initialView?: 'sheet' | 'dashboard' 
                 onDelete={deleteSheet}
               />
               <div className="mt-4">
-                <SheetTable sheet={activeSheet} onChange={updateSheet} />
+                {view === 'sheet' ? (
+                  <SheetTable sheet={activeSheet} onChange={updateSheet} />
+                ) : (
+                  <>
+                    <div className="mb-4 flex items-center justify-between gap-3">
+                      <div>
+                        <h2 className="text-lg font-bold tracking-tight text-[#172554]">
+                          Dashboard
+                        </h2>
+                        <p className="text-xs text-muted-foreground">
+                          Gerado automaticamente a partir de{' '}
+                          <span className="font-medium text-[#172554]">{activeSheet?.name}</span> —
+                          arraste, redimensione e personalize.
+                        </p>
+                      </div>
+                      <button
+                        onClick={runAutoDashboard}
+                        className="inline-flex items-center gap-1.5 rounded-lg border border-[#0F766E]/30 bg-[#0F766E]/5 px-3 py-2 text-xs font-semibold text-[#0F766E] hover:bg-[#0F766E]/10"
+                      >
+                        <Sparkles className="h-3.5 w-3.5" /> Regenerar dashboard
+                      </button>
+                    </div>
+                    <DashGrid />
+                  </>
+                )}
               </div>
-            </div>
-          )}
-          {view === 'dashboard' && (
-            <div className="px-5 py-4">
-              <div className="mb-4 flex items-center justify-between gap-3">
-                <div>
-                  <h2 className="text-lg font-bold tracking-tight text-[#172554]">Dashboard</h2>
-                  <p className="text-xs text-muted-foreground">
-                    Gerado automaticamente a partir de{' '}
-                    <span className="font-medium text-[#172554]">{activeSheet?.name}</span> —
-                    arraste, redimensione e personalize.
-                  </p>
-                </div>
-                <button
-                  onClick={runAutoDashboard}
-                  className="inline-flex items-center gap-1.5 rounded-lg border border-[#0F766E]/30 bg-[#0F766E]/5 px-3 py-2 text-xs font-semibold text-[#0F766E] hover:bg-[#0F766E]/10"
-                >
-                  <Sparkles className="h-3.5 w-3.5" /> Regenerar dashboard
-                </button>
-              </div>
-              <DashGrid />
             </div>
           )}
         </main>

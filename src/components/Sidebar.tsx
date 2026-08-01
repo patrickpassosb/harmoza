@@ -1,15 +1,6 @@
 import { useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import {
-  Upload,
-  Table2,
-  LayoutDashboard,
-  Bot,
-  FileSpreadsheet,
-  Plus,
-  Trash2,
-  Loader2,
-} from 'lucide-react'
+import { Upload, Bot, FileSpreadsheet, Plus, Trash2, Loader2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import {
   Dialog,
@@ -23,8 +14,6 @@ import { useHarmoza } from '@/lib/store'
 
 export function Sidebar() {
   const {
-    view,
-    setView,
     importFile,
     loadDemo,
     workbooks,
@@ -37,11 +26,6 @@ export function Sidebar() {
   const navigate = useNavigate()
   const [deleteTarget, setDeleteTarget] = useState<{ id: string; fileName: string } | null>(null)
   const [isDeleting, setIsDeleting] = useState(false)
-
-  const navItems = [
-    { key: 'sheet' as const, label: 'Planilha', icon: Table2 },
-    { key: 'dashboard' as const, label: 'Dashboard', icon: LayoutDashboard },
-  ]
 
   const handleConfirmDelete = async () => {
     if (!deleteTarget || isDeleting) return
@@ -59,26 +43,6 @@ export function Sidebar() {
       </div>
 
       <nav className="mt-4 flex flex-col gap-1 px-3">
-        {navItems.map((item) => {
-          const Icon = item.icon
-          const active = view === item.key
-          return (
-            <button
-              key={item.key}
-              onClick={() => {
-                setView(item.key)
-                navigate('/')
-              }}
-              className={`flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors ${
-                active
-                  ? 'bg-white/15 text-white'
-                  : 'text-white/70 hover:bg-white/10 hover:text-white'
-              }`}
-            >
-              <Icon className="h-4 w-4" /> {item.label}
-            </button>
-          )
-        })}
         <button
           onClick={() => setAgentOpen(true)}
           className="flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium text-white/70 transition-colors hover:bg-white/10 hover:text-white"

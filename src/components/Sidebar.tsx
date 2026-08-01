@@ -1,4 +1,5 @@
 import { useRef, useState } from 'react'
+import { useNavigate } from 'react-router-dom'
 import {
   Upload,
   Table2,
@@ -17,9 +18,8 @@ import {
   DialogTitle,
   DialogFooter,
 } from '@/components/ui/dialog'
-import { HarmozaLogo, HarmozaWordmark } from './Logo'
+import { HarmozaLogo } from './Logo'
 import { useHarmoza } from '@/lib/store'
-import { useNavigate } from 'react-router-dom'
 
 export function Sidebar() {
   const {
@@ -48,42 +48,17 @@ export function Sidebar() {
     setIsDeleting(true)
     const result = await deleteWorkbook(deleteTarget.id)
     setIsDeleting(false)
-    if (!result.error) {
-      setDeleteTarget(null)
-    }
+    if (!result.error) setDeleteTarget(null)
   }
 
   return (
     <aside className="flex h-screen w-60 shrink-0 flex-col border-r border-sidebar-border bg-[#172554] text-white">
-      <div className="flex items-center gap-2.5 px-5 py-5">
-        <HarmozaLogo size={34} />
-        <HarmozaWordmark size="md" />
+      <div className="flex items-center gap-3 px-5 py-6 border-b border-white/10">
+        <HarmozaLogo size={42} />
+        <span className="text-2xl font-black tracking-wider text-white">HARMOZA</span>
       </div>
 
-      <div className="px-3">
-        <Button
-          className="w-full justify-start gap-2 bg-white/10 text-white hover:bg-white/20"
-          onClick={() => inputRef.current?.click()}
-        >
-          <Upload className="h-4 w-4" /> Importar planilha
-        </Button>
-        <input
-          ref={inputRef}
-          type="file"
-          accept=".xlsx,.xls"
-          className="hidden"
-          onChange={(e) => {
-            const f = e.target.files?.[0]
-            if (f) {
-              void importFile(f)
-              navigate('/')
-            }
-            e.target.value = ''
-          }}
-        />
-      </div>
-
-      <nav className="mt-6 flex flex-col gap-1 px-3">
+      <nav className="mt-4 flex flex-col gap-1 px-3">
         {navItems.map((item) => {
           const Icon = item.icon
           const active = view === item.key
@@ -112,7 +87,7 @@ export function Sidebar() {
         </button>
       </nav>
 
-      <div className="mt-6 flex-1 overflow-y-auto px-3 pb-3">
+      <div className="mt-6 flex-1 overflow-y-auto px-3 pb-4">
         <p className="px-3 pb-2 text-[11px] font-semibold uppercase tracking-wider text-white/50">
           Meus arquivos
         </p>
@@ -157,15 +132,39 @@ export function Sidebar() {
             )
           })}
         </div>
-        <button
-          className="mt-2 flex w-full items-center gap-2 rounded-lg px-3 py-2 text-xs text-white/60 transition-colors hover:text-white"
-          onClick={() => {
-            void loadDemo()
-            navigate('/')
-          }}
-        >
-          <Plus className="h-3.5 w-3.5" /> Carregar demonstração
-        </button>
+
+        <div className="mt-3 pt-3 border-t border-white/10 flex flex-col gap-2">
+          <button
+            className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-xs text-white/70 transition-colors hover:bg-white/10 hover:text-white"
+            onClick={() => {
+              void loadDemo()
+              navigate('/')
+            }}
+          >
+            <Plus className="h-3.5 w-3.5" /> Carregar demonstração
+          </button>
+
+          <Button
+            className="w-full justify-start gap-2 bg-white/10 text-white hover:bg-white/20 text-xs font-medium"
+            onClick={() => inputRef.current?.click()}
+          >
+            <Upload className="h-4 w-4" /> Importar planilha
+          </Button>
+          <input
+            ref={inputRef}
+            type="file"
+            accept=".xlsx,.xls"
+            className="hidden"
+            onChange={(e) => {
+              const f = e.target.files?.[0]
+              if (f) {
+                void importFile(f)
+                navigate('/')
+              }
+              e.target.value = ''
+            }}
+          />
+        </div>
       </div>
 
       <Dialog
